@@ -1,0 +1,41 @@
+# Render Infrastructure as Code
+# https://render.com/docs/infrastructure-as-code
+
+services:
+  - type: web
+    name: great-olive-api
+    env: node
+    plan: starter          # change to standard if you need more RAM/CPU
+    region: frankfurt      # or oregon, ohio, etc.
+
+    # Monorepo settings
+    rootDir: .
+
+    buildCommand: npm ci --omit=dev && npm run build:render
+    startCommand: npm run start:render
+
+    # Node version (Render supports 20/22 well for better-sqlite3)
+    # You can also set this in the dashboard under "Settings > Environment"
+    # nodeVersion: 20.18.0
+
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: CORS_ORIGINS
+        value: https://great-olive.vercel.app
+      - key: ENABLE_SUPABASE_SYNC
+        value: "false"     # set to "true" only if you have Supabase credentials
+      # - key: DATA_DIR
+      #   value: /opt/render/project/src/data   # usually not needed if disk is mounted correctly
+
+    # Persistent disk for SQLite + uploads (CRITICAL for SQLite)
+    disk:
+      name: great-olive-data
+      mountPath: /opt/render/project/src/data
+      sizeGB: 5
+
+    # Health check (already implemented in server.ts)
+    healthCheckPath: /health
+
+    # Auto-deploy on push to main
+    autoDeploy: true

@@ -13,6 +13,8 @@
     "build:vercel": "vite build",
     "build:main": "mkdir -p dist/main && cp src/main/main.js dist/main/ && tsc src/main/preload/preload.ts --outDir dist/main/preload --module commonjs --target es2018 --esModuleInterop --ignoreConfig --skipLibCheck",
     "server": "npm run build:server && node dist/server/server/server.js",
+    "build:render": "tsc -p tsconfig.server.json",
+    "start:render": "node dist/server/server/server.js",
     "electron": "electron .",
     "dist": "npm run build && electron-builder",
     "test": "echo \"Error: no test specified\" && exit 1"

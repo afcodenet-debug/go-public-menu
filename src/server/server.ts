@@ -28,19 +28,20 @@ import menuRoutes from './routes/menu';
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// Configure CORS for development
+// CORS configurable (prod + dev)
+const rawOrigins = process.env.CORS_ORIGINS || '';
+const allowedOrigins = rawOrigins
+  ? rawOrigins.split(',').map(o => o.trim()).filter(Boolean)
+  : [
+      'http://localhost:5173',
+      'http://localhost:5174',
+      'http://127.0.0.1:5173',
+    ];
+
 app.use(cors({
-  origin: [
-    'http://localhost:5173',
-    'http://localhost:5174',
-    'http://localhost:5175',
-    'http://localhost:3000',
-    'http://127.0.0.1:5173',
-    'http://127.0.0.1:5174',
-    'http://127.0.0.1:3000'
-  ],
+  origin: allowedOrigins,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-User-Role']
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-User-Role'],
 }));
 app.use(express.json({ limit: '20mb' }));
 app.use(express.urlencoded({ limit: '20mb', extended: true }));

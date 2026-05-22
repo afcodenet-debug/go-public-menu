@@ -31,8 +31,9 @@ import { applyAll as runMigrations } from '../infra/migrations/runner';
 
 // --- paths -----------------------------------------------------------------
 
-const projectRoot = process.cwd();
-const dataDir     = path.resolve(projectRoot, 'data');
+const dataDir = process.env.DATA_DIR
+  ? path.resolve(process.env.DATA_DIR)
+  : path.resolve(process.cwd(), 'data');
 const uploadsDir  = path.resolve(dataDir, 'uploads', 'products');
 
 if (!fs.existsSync(dataDir))    fs.mkdirSync(dataDir,    { recursive: true });
