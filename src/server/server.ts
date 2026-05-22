@@ -96,7 +96,7 @@ const uploadsDir = path.resolve(process.cwd(), 'data', 'uploads');
 if (fs.existsSync(uploadsDir)) {
   app.use('/api/uploads', express.static(uploadsDir, {
     maxAge: '7d',
-    setHeaders: (res, filePath) => {
+    setHeaders: (res: express.Response, filePath: string) => {
       if (/\.(jpg|jpeg|png|gif|webp)$/.test(filePath)) {
         res.setHeader('Cache-Control', 'public, max-age=604800');
       }
