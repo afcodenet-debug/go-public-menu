@@ -103,6 +103,9 @@ export function initializeDatabase(): void {
   // ── Migrations (forward-only, sequential, idempotent) ────────────────────
   runMigrations();
 
+  // ── Safety net: ensure minimum tables for QR menu on fresh DB (Render) ───
+  ensureCoreQrMenuTables();
+
   // ── Seed data (wrapped for fresh DB tolerance on Render) ────────────────
   try {
     seedAdmin();
@@ -143,6 +146,100 @@ export function initializeDatabase(): void {
   } catch (e: any) {
     console.warn('[Database] Seeding skipped due to missing tables (fresh DB):', e?.message || e);
   }
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+// Bootstrap: force minimal schema for QR Public Menu on fresh deployments (Render)
+// This runs after migrations so it acts as a safety net when early migrations are skipped.
+// ───────────────────────────────────────────────────────────────────────────────
+function ensureCoreQrMenuTables(): void {
+  // restaurant_tables (needed for /api/menu/table/:qr_token)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS restaurant_tables (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      table_number TEXT NOT NULL,
+      capacity INTEGER DEFAULT 4,
+      status TEXT DEFAULT 'available',
+      assigned_waiter_id INTEGER,
+      qr_token TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  // categories (modern)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS categories (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      description TEXT,
+      display_order INTEGER DEFAULT 0,
+      is_active INTEGER DEFAULT 1,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  // products (the table actually used by the public menu now)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS products (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      category_id INTEGER,
+      name TEXT NOT NULL,
+      description TEXT,
+      selling_price REAL NOT NULL,
+      unit TEXT,
+      image_url TEXT,
+      is_available INTEGER DEFAULT 1,
+      stock_quantity INTEGER DEFAULT 0,
+      minimum_stock INTEGER DEFAULT 5,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  // Basic orders table (needed for checkout flow)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS orders (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      table_id INTEGER,
+      status TEXT DEFAULT 'pending',
+      total REAL DEFAULT 0,
+      customer_phone TEXT,
+      notes TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  // order_items (for checkout)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS order_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      order_id INTEGER NOT NULL,
+      product_id INTEGER NOT NULL,
+      quantity REAL NOT NULL,
+      unit_price REAL NOT NULL,
+      total_price REAL NOT NULL,
+      notes TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  // users (needed by seedAdmin and some protected routes)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS users (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      full_name TEXT,
+      username TEXT UNIQUE,
+      pin_code TEXT,
+      role TEXT DEFAULT 'waiter',
+      is_active INTEGER DEFAULT 1,
+      email TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  console.log('[Database] Core QR menu tables ensured (IF NOT EXISTS)');
 }
 
 // ───────────────────────────────────────────────────────────────────────────────
