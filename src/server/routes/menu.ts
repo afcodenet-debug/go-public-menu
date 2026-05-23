@@ -40,10 +40,10 @@ router.get('/table/:qr_token', async (req, res) => {
     if (env.USE_SUPABASE_TABLES) {
       const tableRepo = getTableRepository();
       table = await tableRepo.findByQrToken(qr_token);
-      console.log('[Public Menu] Table lookup via Supabase (businessId ignored)', {
+      console.log('[Public Menu][FORENSIC] After tableRepo.findByQrToken', {
         qr_token,
         tableFound: !!table,
-        tableId: table?.id ?? null,
+        table: table,
       });
     } else {
       table = localDb.prepare(`
