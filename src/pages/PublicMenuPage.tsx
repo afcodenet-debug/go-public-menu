@@ -10,9 +10,11 @@ const API_BASE_URL =
   '';
 
 const apiUrl = (endpoint: string) => {
-  // endpoint attendu avec préfixe /api/...
   const base = String(API_BASE_URL || '').replace(/\/$/, '');
-  if (!base) return endpoint; // fallback local => /api/...
+  if (!base) {
+    console.warn('[QR Menu] VITE_API_BASE_URL est vide → appel relatif (ne marchera pas en production)');
+    return endpoint;
+  }
   return `${base}${endpoint}`;
 };
 
@@ -469,17 +471,56 @@ const PublicMenuPage = () => {
 
   // ─── Fetch menu ───────────────────────────────────────────────────────────
   useEffect(() => {
-    if (!token) { setError('No menu token provided in the URL.'); setLoading(false); return; }
+    if (!token) {
+      setError('Aucun token de table fourni dans l’URL.');
+      setLoading(false);
+      return;
+    }
+
     const fetchMenu = async () => {
       try {
         setLoading(true);
-        const res = await fetch(apiUrl(`/api/menu/table/${encodeURIComponent(token)}`));
-        if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || 'This menu link is invalid or has expired.'); }
+        setError(null);
+
+        const targetUrl = apiUrl(`/api/menu/table/${encodeURIComponent(token)}`);
+        console.log('[QR Menu] Tentative de chargement depuis :', targetUrl);
+
+        const res = await fetch(targetUrl);
+
+        if (!res.ok) {
+          const text = await res.text().catch(() => '');
+          console.error('Menu fetch failed:', res.status, text);
+          throw new Error(`Erreur serveur (${res.status})`);
+        }
+
         const data = await res.json();
-        setTable(data.table); setMenu(data.menu || []); setActivecat(data.menu?.[0]?.id ?? null); setError(null);
-      } catch (e: any) { setError(e.message || 'Failed to load the menu.'); }
-      finally { setLoading(false); }
+        setTable(data.table);
+        setMenu(data.menu || []);
+        setActivecat(data.menu?.[0]?.id ?? null);
+      } catch (e: any) {
+        console.error('Menu load error:', e);
+
+        const targetUrl = apiUrl(`/api/menu/table/${encodeURIComponent(token)}`);
+
+        // Message plus clair pour les développeurs / admins
+        if (!API_BASE_URL) {
+          setError(
+            `Configuration manquante : VITE_API_BASE_URL n'est pas défini.\n` +
+            `Le menu essaie d'appeler : ${targetUrl}\n\n` +
+            `Va dans Vercel → Environment Variables et ajoute VITE_API_BASE_URL = https://reat-olive-api.onrender.com`
+          );
+        } else {
+          setError(
+            `Impossible de joindre le serveur du menu.\n` +
+            `URL appelée : ${targetUrl}\n\n` +
+            `Erreur : ${e.message || 'NetworkError'}`
+          );
+        }
+      } finally {
+        setLoading(false);
+      }
     };
+
     fetchMenu();
   }, [token]);
 
@@ -501,7 +542,9 @@ const PublicMenuPage = () => {
           <UtensilsCrossed color={T.gold} size={26} />
         </div>
         <h1 style={{ fontFamily: T.serif, fontSize: 34, fontWeight: 700, color: T.text, marginBottom: 12, lineHeight: 1.1 }}>Menu indisponible</h1>
-        <p style={{ color: T.text2, fontSize: 15, marginBottom: 20, lineHeight: 1.6 }}>{error}</p>
+        <p style={{ color: T.text2, fontSize: 15, marginBottom: 20, lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>
+          {error}
+        </p>
         <p style={{ color: T.text3, fontSize: 12, letterSpacing: '0.05em', lineHeight: 1.7 }}>Scannez le QR code de votre table ou demandez un nouveau code au personnel.</p>
       </div>
     </div>

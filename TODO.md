@@ -1,0 +1,3 @@
+- [ ] Monter les routes manquantes dans src/server/server.ts (tables, products, orders, expenses, dashboard)
+- [ ] Vérifier que /api/menu reste inchangé
+- [ ] Relancer l’app et confirmer que les endpoints /api/tables, /api/products, /api/orders/active, /api/orders, /api/expenses, /api/dashboard/summary retournent 200 (pas 404)
