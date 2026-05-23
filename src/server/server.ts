@@ -5,6 +5,8 @@ import { env } from './config/env';
 const app = express();
 app.use(express.json());
 
+console.log('[RENDER START] booting express server...');
+
 app.use('/api/menu', menuRoutes);
 
 app.get('/health', (_req, res) => res.json({ status: 'ok' }));
