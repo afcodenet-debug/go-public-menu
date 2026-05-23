@@ -4,7 +4,7 @@
 services:
   - type: web
     name: great-olive-api
-    env: node
+    runtime: node
     plan: starter          # change to standard if you need more RAM/CPU
     region: frankfurt      # or oregon, ohio, etc.
 
@@ -12,7 +12,8 @@ services:
     rootDir: .
 
     buildCommand: npm ci --omit=dev && npm run build:render
-    startCommand: node dist/server/server.js
+    startCommand: node dist/server/server/server.js
+
 
     # Node version (Render supports 20/22 well for better-sqlite3)
     # You can also set this in the dashboard under "Settings > Environment"
