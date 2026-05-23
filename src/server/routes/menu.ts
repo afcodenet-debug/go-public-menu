@@ -1,6 +1,9 @@
 import express from 'express';
 import { db } from '../db/database';
 import { OrderService } from '../services/order.service';
+import { getProductRepository } from '../products/repositories/product.repository.provider';
+import { getTableRepository } from '../tables/repositories/table.repository.provider';
+import { env } from '../config/env';
 
 const router = express.Router();
 
@@ -55,44 +58,75 @@ router.get('/categories', (_req, res) => {
 /**
  * Public: menu for a table identified by qr_token
  */
-router.get('/table/:qr_token', (req, res) => {
+router.get('/table/:qr_token', async (req, res) => {
   const { qr_token } = req.params;
 
   try {
-    const table = db.prepare(`
-      SELECT id, table_number, capacity, status, assigned_waiter_id, qr_token
-      FROM restaurant_tables
-      WHERE qr_token = ?
-      LIMIT 1
-    `).get(qr_token) as TableRow | undefined;
+    let table: any;
+
+    if (env.USE_SUPABASE_TABLES) {
+      const tableRepo = getTableRepository();
+      table = await tableRepo.findByQrToken(qr_token, 'default-business');
+    } else {
+      table = db.prepare(`
+        SELECT id, table_number, capacity, status, assigned_waiter_id, qr_token
+        FROM restaurant_tables
+        WHERE qr_token = ?
+        LIMIT 1
+      `).get(qr_token) as TableRow | undefined;
+    }
 
     if (!table) {
       return res.status(404).json({ error: 'Table not found for given qr_token' });
     }
 
-    // === PUBLIC MENU - STRICTLY FROM REAL PRODUCTS TABLE ===
-    // Customer QR menu must include every available product (e.g. drinks),
-    // even if categories mismatch. We build categories from the set of
-    // products we actually return.
-    console.log('[Public Menu] Serving real products from `products` table for token', qr_token);
+    // === PUBLIC MENU: use Supabase when flag is on, legacy SQLite otherwise ===
+    // This is the key change so that Render can serve the QR menu from Supabase
+    // instead of the local SQLite file on the Render disk.
+    let products: Array<any>;
 
-    const products = db.prepare(`
-      SELECT 
-        p.id,
-        p.category_id,
-        p.name,
-        p.description,
-        p.selling_price as price,
-        'ZMW' as currency,
-        p.unit,
-        p.image_url,
-        p.is_available,
-        p.stock_quantity,
-        p.minimum_stock
-      FROM products p
-      WHERE p.is_available = 1
-      ORDER BY p.category_id ASC, p.name ASC
-    `).all() as Array<any>;
+    if (env.USE_SUPABASE_PRODUCTS) {
+      console.log('[Public Menu] Serving from Supabase (USE_SUPABASE_PRODUCTS=true) for token', qr_token);
+      const repo = getProductRepository();
+
+      // Preferred method for public QR menu (returns flat array, already filtered)
+      const items = await repo.findAvailableForMenu('default-business');
+
+      // Map ProductEntity → legacy shape expected by grouping logic + PublicMenuPage
+      products = items.map((p: any) => ({
+        id: p.id,
+        category_id: p.category_id,
+        name: p.name,
+        description: p.description,
+        price: p.price,
+        currency: 'ZMW',
+        unit: p.unit ?? null,
+        image_url: p.image_url,
+        is_available: p.is_available ? 1 : 0,
+        stock_quantity: p.stock_quantity ?? 0,
+        minimum_stock: p.low_stock_threshold ?? 0,
+      }));
+    } else {
+      console.log('[Public Menu] Serving real products from local SQLite `products` table for token', qr_token);
+
+      products = db.prepare(`
+        SELECT 
+          p.id,
+          p.category_id,
+          p.name,
+          p.description,
+          p.selling_price as price,
+          'ZMW' as currency,
+          p.unit,
+          p.image_url,
+          p.is_available,
+          p.stock_quantity,
+          p.minimum_stock
+        FROM products p
+        WHERE p.is_available = 1
+        ORDER BY p.category_id ASC, p.name ASC
+      `).all() as Array<any>;
+    }
 
     const categoryIds = Array.from(
       new Set(products.map(p => p.category_id).filter((x): x is number => typeof x === 'number'))

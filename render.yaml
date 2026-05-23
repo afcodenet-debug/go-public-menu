@@ -24,9 +24,23 @@ services:
       - key: CORS_ORIGINS
         value: https://great-olive.vercel.app
       - key: ENABLE_SUPABASE_SYNC
-        value: "false"     # set to "true" only if you have Supabase credentials
+        value: "false"
+      # === Supabase as source of truth for QR menu / products (set these + flip the flag) ===
+      # - key: SUPABASE_URL
+      #   value: https://your-project.supabase.co
+      # - key: SUPABASE_SERVICE_ROLE_KEY
+      #   value: eyJ... (service_role key, not anon)
+      # - key: USE_SUPABASE_PRODUCTS
+      #   value: "true"
+      # - key: USE_SUPABASE_CATEGORIES
+      #   value: "false"   # migrate later
+      # - key: USE_SUPABASE_TABLES
+      #   value: "false"
+      # - key: USE_SUPABASE_ORDERS
+      #   value: "false"
+      # Persistent disk still needed for uploads + any legacy tables not yet migrated
       # - key: DATA_DIR
-      #   value: /opt/render/project/src/data   # usually not needed if disk is mounted correctly
+      #   value: /opt/render/project/src/data
 
     # Persistent disk for SQLite + uploads (CRITICAL for SQLite)
     disk:
