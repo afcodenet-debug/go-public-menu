@@ -21,63 +21,63 @@ export class SupabaseTableRepository implements ITableRepository {
 
     console.log('══════════════════════════════════════════════════════════════');
     console.log('[FORENSIC] SupabaseTableRepository.findByQrToken START');
-    console.log('[FORENSIC] qrToken (full):', qrToken);
+    console.log('[FORENSIC] qrToken (FULL):', qrToken);
     console.log('[FORENSIC] qrToken preview:', tokenPreview);
-    console.log('[FORENSIC] businessId param:', businessId ?? '(ignored for public QR)');
     console.log('[FORENSIC] RENDER_CLOUD_MODE:', env.RENDER_CLOUD_MODE);
-    console.log('[FORENSIC] SUPABASE_URL host:', env.SUPABASE_URL ? new URL(env.SUPABASE_URL).host : null);
+    console.log('[FORENSIC] SUPABASE_URL host:', env.SUPABASE_URL ? new URL(env.SUPABASE_URL).host : 'MISSING');
 
-    // 1) Exact lookup with full raw response logging
-    const lookup = await this.supabase
+    // === FORENSIC MODE: Unfiltered read + JS filter (to bypass any RLS / filter issue) ===
+    console.log('[FORENSIC] Executing unfiltered SELECT * from restaurant_tables (limited)');
+
+    const { data: allRows, error: allError } = await this.supabase
+      .from('restaurant_tables')
+      .select('*')
+      .limit(50);   // forensic safety limit
+
+    if (allError) {
+      console.error('[FORENSIC] ERROR reading restaurant_tables (no filter):', {
+        code: allError.code,
+        message: allError.message,
+        details: allError.details,
+        hint: allError.hint,
+      });
+      return null;
+    }
+
+    console.log('[FORENSIC] Total rows visible to this client (unfiltered):', allRows?.length ?? 0);
+
+    // Try to find the token in JS
+    const matchingRow = allRows?.find((row: any) => row.qr_token === qrToken);
+
+    if (matchingRow) {
+      console.log('[FORENSIC] ✓ FOUND via unfiltered + JS filter. Row:', matchingRow);
+      console.log('══════════════════════════════════════════════════════════════');
+      return matchingRow as TableEntity;
+    }
+
+    // Log all qr_token values we can see (for diagnosis)
+    const visibleTokens = allRows?.map((r: any) => r.qr_token).filter(Boolean) ?? [];
+    console.log('[FORENSIC] Visible qr_token values in first 50 rows:', visibleTokens);
+
+    // Also try the original filtered query for comparison
+    const { data: filteredData, error: filteredError } = await this.supabase
       .from('restaurant_tables')
       .select('*')
       .eq('qr_token', qrToken)
       .maybeSingle();
 
-    console.log('[FORENSIC] Supabase .maybeSingle() raw result:', {
-      hasData: !!lookup.data,
-      data: lookup.data,
-      error: lookup.error ? {
-        code: lookup.error.code,
-        message: lookup.error.message,
-        details: lookup.error.details,
-        hint: lookup.error.hint,
+    console.log('[FORENSIC] Direct .eq(qr_token) result:', {
+      hasData: !!filteredData,
+      data: filteredData,
+      error: filteredError ? {
+        code: filteredError.code,
+        message: filteredError.message,
+        details: filteredError.details,
+        hint: filteredError.hint,
       } : null,
     });
 
-    if (lookup.data) {
-      console.log('[FORENSIC] → ROW FOUND via .maybeSingle(), returning it');
-      console.log('══════════════════════════════════════════════════════════════');
-      return lookup.data as TableEntity;
-    }
-
-    // 2) Fallback: try to read the table at all (no filter) to detect RLS / schema / project issues
-    const sample = await this.supabase
-      .from('restaurant_tables')
-      .select('id, table_number, qr_token, created_at')
-      .limit(3);
-
-    console.log('[FORENSIC] Sample read from restaurant_tables (no filter, limit 3):', {
-      hasRows: !!(sample.data && sample.data.length > 0),
-      rows: sample.data,
-      error: sample.error ? {
-        code: sample.error.code,
-        message: sample.error.message,
-      } : null,
-    });
-
-    // 3) Count with the exact token
-    const countRes = await this.supabase
-      .from('restaurant_tables')
-      .select('*', { count: 'exact', head: true })
-      .eq('qr_token', qrToken);
-
-    console.log('[FORENSIC] COUNT for this exact qr_token:', {
-      matchingRowCount: countRes.count ?? 0,
-      countError: countRes.error ? countRes.error.message : null,
-    });
-
-    console.log('[FORENSIC] → FINAL DECISION: returning null (not found via app)');
+    console.log('[FORENSIC] → FINAL: Row not visible to this Supabase client');
     console.log('══════════════════════════════════════════════════════════════');
 
     return null;
