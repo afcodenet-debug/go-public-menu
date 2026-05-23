@@ -64,7 +64,8 @@ export function applyMigration(filename: string, sqlPath: string): void {
     console.log(`[Migrations] ✓ Applied: ${filename}`);
   } catch (err: any) {
     const message = String(err?.message || err);
-    const isSafeSchemaError = filename.startsWith('000_') && /no such column: status/i.test(message);
+    const isSafeSchemaError = filename.startsWith('000_') &&
+      (/no such column: status/i.test(message) || /no such table:/i.test(message));
     const isDuplicateColumnError = /duplicate column name:/i.test(message);
     const isUnsupportedUniqueColumnError = /cannot add a unique column/i.test(message);
 
