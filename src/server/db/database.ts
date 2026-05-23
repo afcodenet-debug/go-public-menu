@@ -103,39 +103,46 @@ export function initializeDatabase(): void {
   // ── Migrations (forward-only, sequential, idempotent) ────────────────────
   runMigrations();
 
-  // ── Seed data ────────────────────────────────────────────────────────────
-  seedAdmin();
-  seedManager();
-  seedWaiter();
-  seedCashier();
-  seedTables();
-  seedCategories();
-
-  // Purge simple des produits "demo/test" existants dans la BD
-  // afin que le menu QR affiche uniquement du contenu réel depuis `products`.
-  disableDemoTestProducts();
-
-  seedMenuSchema(); // legacy QR menu schema seed (menu_categories/menu_items)
-  seedSettings();
-
-  // Seed QR tokens après seedTables (au cas où la table est vide au 1er run)
-  seedQrTokensForTables();
-
-  ensureEmailSettingsDefaults();
-
-  // Add email column to users (nullable + unique)
+  // ── Seed data (wrapped for fresh DB tolerance on Render) ────────────────
   try {
-    db.prepare(`ALTER TABLE users ADD COLUMN email TEXT`).run();
-  } catch (e) {
-    // Column already exists
+    seedAdmin();
+    seedManager();
+    seedWaiter();
+    seedCashier();
+    seedTables();
+    seedCategories();
+
+    // Purge simple des produits "demo/test" existants dans la BD
+    disableDemoTestProducts();
+
+    seedMenuSchema(); // legacy QR menu schema seed (menu_categories/menu_items)
+    seedSettings();
+
+    // Seed QR tokens après seedTables (au cas où la table est vide au 1er run)
+    seedQrTokensForTables();
+
+    ensureEmailSettingsDefaults();
+
+    // Add email column to users (nullable + unique)
+    try {
+      db.prepare(`ALTER TABLE users ADD COLUMN email TEXT`).run();
+    } catch (e) {
+      // Column already exists or table missing
+    }
+
+    // Create partial unique index for non-null emails
+    try {
+      db.prepare(`
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_unique 
+        ON users(email) 
+        WHERE email IS NOT NULL
+      `).run();
+    } catch (e) {
+      // table or index issue on fresh DB
+    }
+  } catch (e: any) {
+    console.warn('[Database] Seeding skipped due to missing tables (fresh DB):', e?.message || e);
   }
-  
-  // Create partial unique index for non-null emails
-  db.prepare(`
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_unique 
-    ON users(email) 
-    WHERE email IS NOT NULL
-  `).run();
 }
 
 // ───────────────────────────────────────────────────────────────────────────────
