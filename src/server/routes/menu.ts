@@ -84,7 +84,7 @@ router.get('/table/:qr_token', async (req, res) => {
         category_id: p.category_id,
         name: p.name,
         description: p.description,
-        price: p.price,
+        price: Number(p.price) || 0,   // ensure numeric for frontend (Supabase stores as string for precision)
         currency: 'ZMW',
         unit: (p as any).unit ?? null,
         image_url: p.image_url,
@@ -103,11 +103,14 @@ router.get('/table/:qr_token', async (req, res) => {
         WHERE p.is_available = 1
         ORDER BY p.category_id ASC, p.name ASC
       `).all() as any[];
+
+      // Coerce to number for consistent API contract (SQLite returns number, but ensure)
+      products = products.map((p: any) => ({ ...p, price: Number(p.price) || 0 }));
     }
 
     // Construction du menu (même logique qu’avant)
     const categoryIds = Array.from(
-      new Set(products.map(p => p.category_id).filter((x): x is number => typeof x === 'number'))
+      new Set(products.map(p => p.category_id).filter((x): x is string | number => x != null))
     );
 
     // === CATEGORIES (Supabase ou local selon flags) ===
@@ -157,7 +160,7 @@ router.get('/table/:qr_token', async (req, res) => {
             id: p.id,
             name: p.name,
             description: p.description,
-            price: p.price,
+            price: Number(p.price) || 0,  // guarantee number for QR menu frontend + calculations
             currency: p.currency,
             unit: p.unit,
             image_url: p.image_url,
