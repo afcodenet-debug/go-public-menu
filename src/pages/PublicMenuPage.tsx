@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { UtensilsCrossed } from 'lucide-react';
+import { UtensilsCrossed, CheckCircle2, XCircle, Info } from 'lucide-react';
 
 /**
  * API base URL (backend déployé séparément).
@@ -74,6 +74,10 @@ const T = {
 const FONT_URL = 'https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;0,700;1,300;1,400;1,600&family=DM+Mono:wght@400;500&family=Inter:wght@300;400;500;600&display=swap';
 const CSS = `
   @keyframes qr-spin { to { transform: rotate(360deg); } }
+  @keyframes toast-in {
+    from { opacity: 0; transform: translateX(-50%) translateY(12px); }
+    to { opacity: 1; transform: translateX(-50%) translateY(0); }
+  }
   .qr-cat-nav::-webkit-scrollbar { display: none; }
   .qr-cat-nav { scrollbar-width: none; }
   .qr-scroll::-webkit-scrollbar { width: 3px; }
@@ -209,6 +213,14 @@ const PublicMenuPage = () => {
   const [pendingOrderItemCount, setPendingOrderItemCount] = useState<number>(0);
   const [bannerDismissed, setBannerDismissed] = useState(false);
 
+  // ─── Aesthetic Toast Notifications for QR Customer Experience ─────────────
+  const [toast, setToast] = useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null);
+
+  const showToast = (type: 'success' | 'error' | 'info', message: string, duration = 4200) => {
+    setToast({ type, message });
+    setTimeout(() => setToast(null), duration);
+  };
+
   const cartItems = Object.values(cart);
   const cartTotal = cartItems.reduce((sum, it) => sum + it.price * it.quantity, 0);
   const cartQty   = cartItems.reduce((s, it) => s + it.quantity, 0);
@@ -272,6 +284,7 @@ const PublicMenuPage = () => {
       if (existing) return { ...prev, [item.id]: { ...existing, quantity: existing.quantity + 1, price, currency: item.currency ?? null, name: item.name } };
       return { ...prev, [item.id]: { productId: item.id, quantity: 1, price, currency: item.currency ?? null, name: item.name } };
     });
+    showToast('success', `${item.name} ajouté au panier`);
   };
 
   const updateQty = (productId: number, delta: number) => {
@@ -290,12 +303,12 @@ const PublicMenuPage = () => {
 
   // ─── Checkout ─────────────────────────────────────────────────────────────
   const checkout = () => {
-    if (!token)        { alert('Token de menu manquant.'); return; }
-    if (!cartItems.length) { alert('Votre panier est vide.'); return; }
+    if (!token)        { showToast('error', 'Token de menu manquant.'); return; }
+    if (!cartItems.length) { showToast('error', 'Votre panier est vide.'); return; }
     if (customerPhone) {
       const d = customerPhone.replace(/\D/g, '');
-      if (d.length < 9)  { alert('Numéro minimum 9 chiffres.'); return; }
-      if (d.length > 14) { alert('Numéro maximum 14 chiffres.'); return; }
+      if (d.length < 9)  { showToast('error', 'Numéro minimum 9 chiffres.'); return; }
+      if (d.length > 14) { showToast('error', 'Numéro maximum 14 chiffres.'); return; }
     }
     const localData = {
       items: cartItems.map(it => ({ product_id: it.productId, quantity: it.quantity })),
@@ -322,20 +335,20 @@ const PublicMenuPage = () => {
           message: `Table ${table?.table_number} — "${item.name}" (${categoryName}) hors stock.`,
         }),
       });
-      alert(`Merci ! Le serveur a été notifié pour "${item.name}".`);
+      showToast('success', `Merci ! Le serveur a été notifié pour "${item.name}".`);
     } catch {
-      alert(`Merci ! Informez votre serveur que "${item.name}" n'est plus disponible.`);
+      showToast('info', `Merci ! Informez votre serveur que "${item.name}" n'est plus disponible.`);
     }
   };
 
   const associatePhone = async (phone: string) => {
     const digits = phone.replace(/\D/g, '');
     if (digits.length < 9) {
-      alert('Minimum 9 chiffres.');
+      showToast('error', 'Minimum 9 chiffres.');
       return;
     }
     if (digits.length > 14) {
-      alert('Maximum 14 chiffres.');
+      showToast('error', 'Maximum 14 chiffres.');
       return;
     }
     try {
@@ -349,24 +362,25 @@ const PublicMenuPage = () => {
       setCustomerPhone(data.phone_number);
       setCustomerPin(data.pin_code || digits.slice(-4));
       persistCustomer(data.phone_number, data.pin_code || digits.slice(-4));
-      alert(
+      showToast(
+        'success',
         data.alreadyExists
           ? 'Numéro déjà enregistré. Bienvenue !'
-          : `✅ Compte créé !\nTéléphone: ${data.phone_number}\nPIN: ${data.pin_code || digits.slice(-4)}`
+          : `Compte créé ! Téléphone: ${data.phone_number} — PIN: ${data.pin_code || digits.slice(-4)}`
       );
       setShowAccountCreation(false);
     } catch (e: any) {
-      alert(`Impossible d'enregistrer : ${e.message || 'Erreur serveur'}`);
+      showToast('error', `Impossible d'enregistrer : ${e.message || 'Erreur serveur'}`);
     }
   };
 
   const validateOrderWithPin = async () => {
     if (!localOrderData) {
-      alert('Commande non préparée.');
+      showToast('error', 'Commande non préparée.');
       return;
     }
     if (!validationPinInput.trim()) {
-      alert('Saisissez votre code PIN.');
+      showToast('error', 'Saisissez votre code PIN.');
       return;
     }
     setIsValidatingOrder(true);
@@ -392,7 +406,7 @@ const PublicMenuPage = () => {
           setPinAttempts(n);
           if (n >= 3) setShowAccountCreation(true);
         }
-        alert(err);
+        showToast('error', err);
         return;
       }
       if (!coData?.orderId) throw new Error(coData?.error || 'Échec création commande');
@@ -417,9 +431,9 @@ const PublicMenuPage = () => {
       setLocalOrderData(null);
       persistLocalOrder(null);
       setCart({});
-      alert('✅ Commande envoyée ! Le personnel va la traiter.');
+      showToast('success', 'Commande envoyée ! Le personnel va la traiter.');
     } catch (e: any) {
-      alert(e?.message || 'Erreur lors de la validation');
+      showToast('error', e?.message || 'Erreur lors de la validation');
     } finally {
       setIsValidatingOrder(false);
     }
@@ -906,6 +920,39 @@ const PublicMenuPage = () => {
         <div style={{ fontSize: 13, letterSpacing: '0.4em', color: T.text3, marginBottom: 7 }}>— ✦ —</div>
         <p style={{ fontSize: 10, letterSpacing: '0.16em', textTransform: 'uppercase', color: T.text3 }}>Carte générale · Mise à jour en temps réel</p>
       </div>
+
+      {/* ══ Aesthetic Toast Notifications (QR Customer) ═══════════════════════ */}
+      {toast && (
+        <div
+          style={{
+            position: 'fixed',
+            bottom: 18,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 99999,
+            background: T.bg3,
+            border: `1px solid ${toast.type === 'success' ? T.gold : toast.type === 'error' ? T.red : T.goldBorder}`,
+            color: T.text,
+            padding: '11px 18px 11px 14px',
+            borderRadius: 14,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+            boxShadow: '0 10px 40px rgba(0,0,0,0.55)',
+            maxWidth: '92vw',
+            fontSize: 13.5,
+            fontWeight: 500,
+            letterSpacing: '0.01em',
+            backdropFilter: 'blur(12px)',
+            animation: 'toast-in 0.2s ease-out',
+          }}
+        >
+          {toast.type === 'success' && <CheckCircle2 size={18} color={T.gold} />}
+          {toast.type === 'error' && <XCircle size={18} color={T.red} />}
+          {toast.type === 'info' && <Info size={18} color={T.gold2} />}
+          <span style={{ lineHeight: 1.3 }}>{toast.message}</span>
+        </div>
+      )}
     </div>
   );
 };
