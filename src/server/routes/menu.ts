@@ -79,12 +79,28 @@ router.get('/table/:qr_token', async (req, res) => {
         page: 1,
       });
 
+      // === DEBUG: Inspect raw Supabase product prices ===
+      // This will appear in Render logs when the QR menu is loaded.
+      // Look for lines starting with [Public Menu][PRICE DEBUG]
+      if (result.data && result.data.length > 0) {
+        console.log('[Public Menu][PRICE DEBUG] First 3 raw products from Supabase:');
+        result.data.slice(0, 3).forEach((p: any, idx: number) => {
+          console.log(`  [${idx}] id=${p.id} name="${p.name}" price=${JSON.stringify(p.price)} selling_price=${JSON.stringify((p as any).selling_price)} cost_price=${JSON.stringify(p.cost_price)}`);
+        });
+        const samplePrices = result.data.slice(0, 5).map((p: any) => Number(p.price) || Number((p as any).selling_price) || 0);
+        console.log('[Public Menu][PRICE DEBUG] Sample numeric prices after coercion:', samplePrices);
+      } else {
+        console.warn('[Public Menu][PRICE DEBUG] No products returned from Supabase findAll()');
+      }
+      // === END DEBUG ===
+
       products = result.data.map((p: any) => ({
         id: p.id,
         category_id: p.category_id,
         name: p.name,
         description: p.description,
-        price: Number(p.price) || 0,   // ensure numeric for frontend (Supabase stores as string for precision)
+        // Defensive: try price (new schema), then selling_price (legacy data), fallback to 0
+        price: Number(p.price ?? (p as any).selling_price) || 0,
         currency: 'ZMW',
         unit: (p as any).unit ?? null,
         image_url: p.image_url,
@@ -106,6 +122,9 @@ router.get('/table/:qr_token', async (req, res) => {
 
       // Coerce to number for consistent API contract (SQLite returns number, but ensure)
       products = products.map((p: any) => ({ ...p, price: Number(p.price) || 0 }));
+
+      // === DEBUG: Legacy path (should only happen if USE_SUPABASE_PRODUCTS is false on Render) ===
+      console.log('[Public Menu][PRICE DEBUG] Legacy/SQLite path used. Sample prices:', products.slice(0,3).map((p:any) => p.price));
     }
 
     // Construction du menu (même logique qu’avant)
@@ -160,7 +179,8 @@ router.get('/table/:qr_token', async (req, res) => {
             id: p.id,
             name: p.name,
             description: p.description,
-            price: Number(p.price) || 0,  // guarantee number for QR menu frontend + calculations
+            // Final guarantee + defensive fallback for any remaining legacy data
+            price: Number(p.price ?? (p as any).selling_price) || 0,
             currency: p.currency,
             unit: p.unit,
             image_url: p.image_url,
@@ -171,6 +191,15 @@ router.get('/table/:qr_token', async (req, res) => {
         };
       })
       .filter(c => c.items.length > 0);
+
+    // === FINAL DEBUG SUMMARY (always logged on QR menu load) ===
+    const allPrices = menu.flatMap((c: any) => c.items.map((i: any) => i.price));
+    console.log('[Public Menu][PRICE DEBUG] FINAL RESPONSE SUMMARY:');
+    console.log('  Total categories:', menu.length);
+    console.log('  Total items:', allPrices.length);
+    console.log('  Sample prices sent to frontend:', allPrices.slice(0, 8));
+    console.log('  Any zero prices?', allPrices.some((p: number) => p === 0));
+    // === END DEBUG ===
 
     res.json({
       table: {
