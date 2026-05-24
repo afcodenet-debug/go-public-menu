@@ -449,6 +449,10 @@ router.post('/checkout', async (req, res) => {
       // Let the database/trigger handle created_at and updated_at
     };
 
+    // Never trust client-provided PK for public QR orders
+    delete orderPayload.id;
+    delete orderPayload.order_id;
+
     const { data: newOrder, error: orderError } = await supabase
       .from('orders')
       .insert(orderPayload)
@@ -460,9 +464,16 @@ router.post('/checkout', async (req, res) => {
       console.error(orderError);
       console.error('Payload we tried to insert:', JSON.stringify(orderPayload, null, 2));
 
+      // Special handling for the common sequence desync issue
+      if (orderError.code === '23505' || (orderError.message || '').includes('duplicate key') || (orderError.message || '').includes('orders_pkey')) {
+        return res.status(500).json({
+          error: 'Erreur de numérotation des commandes (séquence désynchronisée)',
+          debug: 'Exécutez dans Supabase SQL: SELECT setval(pg_get_serial_sequence(\'orders\', \'id\'), COALESCE((SELECT MAX(id) FROM orders), 0) + 1, false);'
+        });
+      }
+
       return res.status(500).json({ 
         error: 'Impossible de créer la commande pour le moment',
-        // Return real error for debugging (remove in final prod)
         debug: orderError.message || orderError.details || JSON.stringify(orderError)
       });
     }

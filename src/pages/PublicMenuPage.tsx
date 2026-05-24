@@ -322,6 +322,8 @@ const PublicMenuPage = () => {
     };
     setLocalOrderData(localData); persistLocalOrder(localData);
     setCart({}); setShowAccountCreation(false); setPinAttempts(0); setOrderNotes('');
+    setActiveOrderId(null);
+    setPendingOrderId(null);
     const msg = "Commande préparée. Entrez votre code PIN (6 chiffres) pour l'envoyer.";
     setPendingOrderMessage(msg); setPendingOrderTotal(cartTotal);
     persistOrder(null, msg, null, cartTotal);
