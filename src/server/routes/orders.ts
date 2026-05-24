@@ -6,9 +6,15 @@ import { requirePermission } from '../middleware/auth';
 
 const router = express.Router();
 
-// Get active orders (with RBAC filtering)
+/* Get active orders (with RBAC filtering) */
 router.get('/active', async (req, res) => {
   const { waiter_id, role } = req.query;
+
+  // Cloud mode guard: db might be null (SQLite disabled).
+  if (!db) {
+    console.warn('[Orders] SQLite disabled (db is null). Returning [] for GET /orders/active');
+    return res.status(200).json([]);
+  }
 
   try {
     const params: any = {};
@@ -29,6 +35,18 @@ router.get('/active', async (req, res) => {
 
 // Get all orders with filters (for management view)
 router.get('/', (req, res) => {
+  // Cloud mode guard: db might be null (SQLite disabled).
+  if (!db) {
+    console.warn('[Orders] SQLite disabled (db is null). Returning empty payload for GET /orders');
+    return res.status(200).json({ orders: [], stats: {
+      active_orders: 0,
+      preparing_orders: 0,
+      ready_orders: 0,
+      served_orders: 0,
+      paid_orders: 0,
+      revenue_today: 0
+    }, pagination: { limit: 50, offset: 0, hasMore: false } });
+  }
   const { waiter_id, role, status, payment_status, table_id, search, limit = 50, offset = 0 } = req.query;
 
   try {

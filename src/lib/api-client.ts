@@ -8,23 +8,48 @@ import type { Order } from '../shared/ordersStore';
  * Évite `import.meta` pour ne plus avoir TS1343.
  */
 const API_BASE: string = (() => {
-  // Vite / browser (Vercel production build) — never reference `import.meta` token
-  // so that tsc -p tsconfig.server.json (CommonJS) does not reject the file.
-  if (typeof window !== 'undefined') {
-    // @ts-ignore - only evaluated in the Vite ESM bundle
-    const v = (globalThis as any)?.import?.meta?.env?.VITE_API_BASE_URL;
-    if (v) return String(v).replace(/\/$/, '');
-  }
+  const normalizeBaseUrl = (raw: string) => {
+    const base = String(raw).replace(/\/$/, '');
+    // If someone configures "...onrender.com" but backend is mounted under "/api",
+    // force it to include "/api".
+    if (base.endsWith('.onrender.com') || base.includes('reat-olive-api.onrender.com')) {
+      return `${base}/api`;
+    }
+    // If env already includes "/api", keep it.
+    if (base.includes('/api')) return base;
+    // Generic hardening: if base looks like a backend root but doesn't include /api, append it.
+    return `${base}/api`;
+  };
 
-  // Node / server build / local dev
+  // 1. Explicit VITE_API_BASE_URL always wins (set in Vercel, .env, or local overrides)
+  try {
+    // @ts-ignore - safe in browser ESM (Vite). Hidden from server CommonJS tsc.
+    const viteEnv = (typeof import.meta !== 'undefined' ? (import.meta as any).env : undefined);
+    const explicit = viteEnv?.VITE_API_BASE_URL;
+    if (explicit) return normalizeBaseUrl(String(explicit));
+  } catch {}
+
+  // 2. In Vite development (local `npm run dev:web` or full dev), ALWAYS use relative /api
+  //    so Vite proxy forwards to your local backend (port 3001 + SQLite).
+  try {
+    // @ts-ignore
+    const viteEnv = (typeof import.meta !== 'undefined' ? (import.meta as any).env : undefined);
+    if (viteEnv?.DEV === true || viteEnv?.MODE === 'development') {
+      return '/api';
+    }
+  } catch {}
+
+  // 3. Node / build-time / older dev detection
   const p = typeof process !== 'undefined' ? process : ({} as any);
-  const apiBaseUrl = p?.env?.API_BASE_URL || p?.env?.VITE_API_BASE_URL;
-  if (apiBaseUrl) return String(apiBaseUrl).replace(/\/$/, '');
+  const fromProcess = p.env?.API_BASE_URL || p.env?.VITE_API_BASE_URL;
+  if (fromProcess) return normalizeBaseUrl(String(fromProcess));
 
-  if (p?.env?.NODE_ENV === 'development') return '/api';
+  if (p.env?.NODE_ENV === 'development') return '/api';
 
-  // Production fallback (Vercel SPA → Render backend with Supabase)
-  return 'https://reat-olive-api.onrender.com';
+  // 4. Last resort ONLY for production Vercel build when no VITE_API_BASE_URL is configured:
+  //    Point to the Render backend.
+  //    Backend exposes admin endpoints under `/api/*` (tables/products/orders/expenses).
+  return 'https://reat-olive-api.onrender.com/api';
 })();
 
 export async function request<T>(

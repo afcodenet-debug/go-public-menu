@@ -1,4 +1,5 @@
 import express from 'express';
+import db from '../db/database';
 import { TableService } from '../services/table.service';
 import { requireAdminOrManager, requireAdmin } from '../middleware/auth';
 import { env } from '../config/env';
@@ -8,6 +9,12 @@ const router = express.Router();
 // Get tables (Role-based filtering)
 router.get('/', async (req, res) => {
   const { waiter_id, role } = req.query;
+
+  // In cloud mode SQLite may be disabled (db === null) => avoid 500, return empty list.
+  if (!db) {
+    console.warn('[Tables] SQLite disabled (db is null). Returning empty list for GET /tables');
+    return res.status(200).json([]);
+  }
 
   try {
     const params: any = {};

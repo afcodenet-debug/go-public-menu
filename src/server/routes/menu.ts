@@ -69,44 +69,40 @@ router.get('/table/:qr_token', async (req, res) => {
     let products: any[] = [];
 
     if (env.USE_SUPABASE_PRODUCTS) {
-      console.log('[Public Menu] Serving products from Supabase (single-tenant, no business_id)');
+      console.log('[Public Menu] Serving products from Supabase (direct query on real schema)');
 
-      const productRepo = getProductRepository();
-      // Pass undefined for businessId → no business filter (single-tenant public menu)
-      const result = await productRepo.findAll(undefined, {
-        is_available: true,
-        limit: 1000,
-        page: 1,
+      const supabase = createClient(env.SUPABASE_URL!, env.SUPABASE_SERVICE_ROLE_KEY!, {
+        auth: { persistSession: false },
       });
 
-      // === DEBUG: Inspect raw Supabase product prices ===
-      // This will appear in Render logs when the QR menu is loaded.
-      // Look for lines starting with [Public Menu][PRICE DEBUG]
-      if (result.data && result.data.length > 0) {
-        console.log('[Public Menu][PRICE DEBUG] First 3 raw products from Supabase:');
-        result.data.slice(0, 3).forEach((p: any, idx: number) => {
-          console.log(`  [${idx}] id=${p.id} name="${p.name}" price=${JSON.stringify(p.price)} selling_price=${JSON.stringify((p as any).selling_price)} cost_price=${JSON.stringify(p.cost_price)}`);
-        });
-        const samplePrices = result.data.slice(0, 5).map((p: any) => Number(p.price) || Number((p as any).selling_price) || 0);
-        console.log('[Public Menu][PRICE DEBUG] Sample numeric prices after coercion:', samplePrices);
-      } else {
-        console.warn('[Public Menu][PRICE DEBUG] No products returned from Supabase findAll()');
-      }
-      // === END DEBUG ===
+      const { data: supaProducts, error } = await supabase
+        .from('products')
+        .select('id, category_id, name, description, selling_price, buying_price, stock_quantity, minimum_stock, unit, image_url, is_available')
+        .eq('is_available', true)
+        .order('category_id')
+        .limit(1000);
 
-      products = result.data.map((p: any) => ({
-        id: p.id,
-        category_id: p.category_id,
-        name: p.name,
-        description: p.description,
-        // Defensive: try price (new schema), then selling_price (legacy data), fallback to 0
-        price: Number(p.price ?? (p as any).selling_price) || 0,
-        currency: 'ZMW',
-        unit: (p as any).unit ?? null,
-        image_url: p.image_url,
-        is_available: p.is_available ? 1 : 0,
-        stock_quantity: p.stock_quantity ?? 0,
-      }));
+      if (error) {
+        console.error('[Public Menu] Direct Supabase products query failed:', error);
+        products = [];
+      } else {
+        products = (supaProducts || []).map((p: any) => ({
+          id: p.id,
+          category_id: p.category_id,
+          name: p.name,
+          description: p.description,
+          price: Number(p.selling_price) || 0,           // ← on lit directement selling_price
+          currency: 'ZMW',
+          unit: p.unit ?? 'pcs',
+          image_url: p.image_url,
+          is_available: p.is_available ? 1 : 0,
+          stock_quantity: Number(p.stock_quantity ?? 0),
+          minimum_stock: Number(p.minimum_stock ?? 0),
+        }));
+
+        console.log('[Public Menu][PRICE DEBUG] Direct Supabase query used. Sample prices:', 
+          products.slice(0, 5).map((x: any) => x.price));
+      }
     } else {
       console.log('[Public Menu] Serving products from local SQLite');
       products = localDb.prepare(`
@@ -179,8 +175,7 @@ router.get('/table/:qr_token', async (req, res) => {
             id: p.id,
             name: p.name,
             description: p.description,
-            // Final guarantee + defensive fallback for any remaining legacy data
-            price: Number(p.price ?? (p as any).selling_price) || 0,
+            price: p.price,           // already normalized above from selling_price
             currency: p.currency,
             unit: p.unit,
             image_url: p.image_url,

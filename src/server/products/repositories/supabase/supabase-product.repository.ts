@@ -149,8 +149,10 @@ export class SupabaseProductRepository implements IProductRepository {
       description: row.description ?? null,
       sku: row.sku ?? null,
       barcode: row.barcode ?? null,
-      price: row.price,
-      cost_price: row.cost_price ?? null,
+      // The current Supabase products table uses legacy columns (selling_price / buying_price).
+      // We map them to the new model fields so the rest of the app can consume them uniformly.
+      price: row.price ?? row.selling_price ?? null,
+      cost_price: row.cost_price ?? row.buying_price ?? null,
       stock_quantity: row.stock_quantity ?? 0,
       low_stock_threshold: row.low_stock_threshold ?? 0,
       image_url: row.image_url ?? null,

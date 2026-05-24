@@ -5,6 +5,12 @@ const router = express.Router();
 
 // Get all expenses
 router.get('/', (req, res) => {
+  // Cloud mode guard: SQLite may be disabled (db === null)
+  if (!db) {
+    console.warn('[Expenses] SQLite disabled (db is null). Returning empty list for GET /expenses');
+    return res.status(200).json([]);
+  }
+
   try {
     const expenses = db.prepare(`
       SELECT e.*, u.full_name as user_name
