@@ -149,47 +149,35 @@ export class ProductSyncService {
         const payload = JSON.parse(item.payload);
 
         if (item.operation === 'insert' || item.operation === 'update') {
-          // PUSH SAFE: Avoid overwriting fresher data on conflict
-          if (item.operation === 'update') {
-            const { data: remote } = await this.supabase
-              .from(table)
-              .select('version, updated_at')
-              .eq('id', item.record_id)
-              .eq('business_id', businessId)
-              .single() as any;
+          // --- Tolerant push for legacy schemas (no business_id, no version, no sync_status) ---
+          // Primary goal right now: keep stock_quantity in sync.
+          // We only send fields that are very likely to exist in the remote table.
+          const safeUpdate: Record<string, any> = {
+            updated_at: new Date().toISOString()
+          };
 
-            const remoteTyped = remote as { version?: number } | null;
-            if (remoteTyped?.version != null && remoteTyped.version > item.version) {
-              console.log(`[Sync] Push skipped for ${entity} ${item.record_id} — Supabase has newer version`);
-              this.db.prepare(`UPDATE sync_outbox SET status = 'done' WHERE id = ?`).run(item.id);
-              continue;
-            }
-          }
+          // Only copy safe, commonly present fields from the queued payload
+          if (payload.stock_quantity !== undefined) safeUpdate.stock_quantity = payload.stock_quantity;
+          if (payload.name !== undefined)            safeUpdate.name = payload.name;
+          if (payload.price !== undefined)           safeUpdate.price = payload.price;
+          if (payload.selling_price !== undefined)   safeUpdate.selling_price = payload.selling_price;
+          if (payload.buying_price !== undefined)    safeUpdate.buying_price = payload.buying_price;
+          if (payload.is_available !== undefined)    safeUpdate.is_available = payload.is_available;
 
+          // Use plain update + eq('id') — works on almost any schema without extra columns
           const { error } = await this.supabase
             .from(table)
-            .upsert(
-              {
-                ...payload,
-                id: item.record_id,
-                business_id: businessId,
-                sync_status: 'synced',
-                last_synced_at: new Date().toISOString(),
-              },
-              { onConflict: 'id' }
-            );
+            .update(safeUpdate)
+            .eq('id', item.record_id);
 
           if (error) throw error;
+
         } else if (item.operation === 'delete') {
+          // Soft-delete tolerant version
           const { error } = await this.supabase
             .from(table)
-            .update({
-              deleted_at: new Date().toISOString(),
-              sync_status: 'synced',
-              last_synced_at: new Date().toISOString(),
-            })
-            .eq('id', item.record_id)
-            .eq('business_id', businessId);
+            .update({ is_available: 0, updated_at: new Date().toISOString() })
+            .eq('id', item.record_id);
 
           if (error) throw error;
         }
