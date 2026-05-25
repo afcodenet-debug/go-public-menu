@@ -231,6 +231,32 @@ const PublicMenuPage = () => {
   // Bound translator for this public page (uses local qrLang, English default)
   const t = (key: string, params?: Record<string, string | number>) => qrT(qrLang, key, params);
 
+  // Translate category names for the public QR menu
+  const getCategoryName = (originalName: string): string => {
+    const key = originalName.toLowerCase().replace(/\s+/g, '');
+    // Map common variations + plurals
+    const categoryKeyMap: Record<string, string> = {
+      beer: 'beer',
+      beers: 'beers',
+      wine: 'wine',
+      wines: 'wines',
+      whisky: 'whisky',
+      'soft drinks': 'softDrinks',
+      softdrinks: 'softDrinks',
+      cocktails: 'cocktails',
+      coktails: 'cocktails',
+      food: 'food',
+      tequila: 'tequila',
+      cognac: 'cognac',
+      champagne: 'champagne',
+      water: 'water',
+    };
+    const mappedKey = categoryKeyMap[key] || key;
+    const translated = t(`qrMenu.categories.${mappedKey}`);
+    // If no translation found (returns the key itself), fallback to original
+    return translated.includes('qrMenu.categories.') ? originalName : translated;
+  };
+
   const StockBadge = ({ item, onAlert }: { item: MenuItem; onAlert: () => void }) => {
     const dot = <span style={{ width: 4, height: 4, borderRadius: '50%', background: 'currentColor', flexShrink: 0 }} />;
 
@@ -1135,7 +1161,7 @@ const PublicMenuPage = () => {
 
           {/* Hero title */}
           <div className="qr-hero-title" style={{ fontFamily: T.serif, fontSize: 52, fontWeight: 300, lineHeight: 0.92, letterSpacing: '-0.01em', color: T.text, paddingBottom: 6, marginTop: showPhoneForm ? 0 : 14 }}>
-            Notre<br /><span style={{ fontStyle: 'italic', color: T.gold, fontWeight: 600 }}>Carte</span>
+                {t('qrMenu.ourMenu').split(' ')[0]}<br /><span style={{ fontStyle: 'italic', color: T.gold, fontWeight: 600 }}>{t('qrMenu.ourMenu').split(' ')[1] || 'Carte'}</span>
           </div>
           <div style={{ height: 1, marginTop: 18, background: `linear-gradient(90deg, ${T.gold} 0%, transparent 80%)`, opacity: 0.3 }} />
         </div>
@@ -1148,7 +1174,7 @@ const PublicMenuPage = () => {
             <button key={cat.id} className="qr-cat-btn"
               onClick={() => scrollToCategory(cat.id)}
               style={{ flexShrink: 0, padding: '7px 15px', borderRadius: 20, fontSize: 11, fontWeight: activecat === cat.id ? 700 : 500, letterSpacing: '0.08em', textTransform: 'uppercase', border: `1px solid ${activecat === cat.id ? T.gold : T.goldBorder}`, color: activecat === cat.id ? T.bg : T.text2, background: activecat === cat.id ? T.gold : 'transparent', cursor: 'pointer', fontFamily: T.sans, whiteSpace: 'nowrap', touchAction: 'manipulation' }}>
-              {cat.name}
+               {getCategoryName(cat.name)}
             </button>
           ))}
         </div>
@@ -1157,9 +1183,9 @@ const PublicMenuPage = () => {
       {/* ══ MENU BODY ═══════════════════════════════════════════════════════ */}
       <div style={{ padding: '0 14px 160px' }}>
         {menu.length === 0 && (
-          <p style={{ color: T.text3, padding: '48px 0', textAlign: 'center', fontSize: 14, letterSpacing: '0.05em' }}>
-            Aucun produit disponible pour le moment.
-          </p>
+            <p style={{ color: T.text3, padding: '48px 0', textAlign: 'center', fontSize: 14, letterSpacing: '0.05em' }}>
+              {t('qrMenu.noProductsAvailable')}
+            </p>
         )}
 
         {menu.map(category => (
@@ -1167,7 +1193,7 @@ const PublicMenuPage = () => {
             {/* Category heading */}
             <div style={{ display: 'flex', alignItems: 'flex-end', gap: 12, marginBottom: 14, paddingBottom: 10, borderBottom: `1px solid rgba(200,168,75,0.18)` }}>
               <div>
-                <div style={{ fontFamily: T.serif, fontSize: 30, fontWeight: 600, fontStyle: 'italic', color: T.gold, letterSpacing: '0.02em', lineHeight: 1 }}>{category.name}</div>
+                <div style={{ fontFamily: T.serif, fontSize: 30, fontWeight: 600, fontStyle: 'italic', color: T.gold, letterSpacing: '0.02em', lineHeight: 1 }}>{getCategoryName(category.name)}</div>
                 <div style={{ fontSize: 9, letterSpacing: '0.18em', textTransform: 'uppercase', color: T.text3, marginTop: 5 }}>
                    {t('qrMenu.itemsCount', { count: category.items.length, plural: category.items.length > 1 ? 's' : '' })}
                 </div>

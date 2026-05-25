@@ -838,6 +838,24 @@ const T = {
     sendOrder:         d('Send order', 'Envoyer commande', 'Enviar pedido'),
     clear:             d('Clear', 'Vider', 'Limpar'),
     cancel:            d('Cancel', 'Annuler', 'Cancelar'),
+    noProductsAvailable: d('No products available at the moment.', 'Aucun produit disponible pour le moment.', 'Nenhum produto disponível no momento.'),
+    ourMenu:           d('Our Menu', 'Notre Carte', 'Nosso Menu'),
+
+    // Category translations for QR Menu (public)
+    categories: {
+      beer:        d('Beer', 'Bière', 'Cerveja'),
+      beers:       d('Beers', 'Bières', 'Cervejas'),
+      wine:        d('Wine', 'Vin', 'Vinho'),
+      wines:       d('Wines', 'Vins', 'Vinhos'),
+      whisky:      d('Whisky', 'Whisky', 'Whisky'),
+      softDrinks:  d('Soft Drinks', 'Boissons sans alcool', 'Bebidas sem álcool'),
+      cocktails:   d('Cocktails', 'Cocktails', 'Coquetéis'),
+      food:        d('Food', 'Nourriture', 'Comida'),
+      tequila:     d('Tequila', 'Tequila', 'Tequila'),
+      cognac:      d('Cognac', 'Cognac', 'Conhaque'),
+      champagne:   d('Champagne', 'Champagne', 'Champanhe'),
+      water:       d('Water', 'Eau', 'Água'),
+    },
 
     // Cart
     yourOrder: d('Your order', 'Votre commande', 'Seu pedido'),
