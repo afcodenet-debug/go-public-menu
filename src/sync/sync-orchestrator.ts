@@ -46,7 +46,11 @@ export class SyncOrchestrator {
     return row?.value || null;
   }
 
-  private setLastPullTimestamp(timestamp: string) {
+  private setLastPullTimestamp(timestamp: string | null) {
+    if (timestamp === null) {
+      this.db.prepare(`DELETE FROM sync_state WHERE key = 'last_pull_timestamp'`).run();
+      return;
+    }
     this.db.prepare(`
       INSERT OR REPLACE INTO sync_state (key, value) 
       VALUES ('last_pull_timestamp', ?)
@@ -172,7 +176,8 @@ export class SyncOrchestrator {
    * Force a full pull (useful after long offline period)
    */
   async forceFullResync(): Promise<void> {
-    this.setLastPullTimestamp(null); // force full pull
+    this.setLastPullTimestamp(null);
+    this.syncService.resetPullCursor(); // also clear in-memory cursor on the service
     await this.triggerSync();
   }
 }

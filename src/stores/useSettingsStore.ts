@@ -1,8 +1,8 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { api } from '../lib/api-client';
-import i18n from '../i18n/config';
 import { useAuthStore } from './useAuthStore';
+import { APP_NAME } from '../lib/app-config';
 
 export type Currency = 'ZMW' | 'CDF' | 'USD' | 'EUR';
 export type Language = 'en' | 'fr' | 'pt';
@@ -101,7 +101,7 @@ export const useSettingsStore = create<SettingsState>()(
       exchangeRates: { ZMW: 1, CDF: 100, USD: 0.04, EUR: 0.035 },
       isLoading: false,
 
-      businessName: 'Great Olive BAR & GRILL',
+      businessName: APP_NAME,
       address: '123 Mufulira Road, Lusaka',
       phone: '+260 97 123 4567',
       email: 'info@greatolive.zm',

@@ -2,6 +2,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../stores/useAuthStore';
 import { useI18n } from '../lib/i18n';
 import { EnterpriseTokens } from '../lib/design-system';
+import { APP_NAME } from '../lib/app-config';
 import {
   LayoutDashboard,
   UtensilsCrossed,
@@ -96,7 +97,7 @@ const Sidebar = () => {
         </div>
         <div>
           <div style={{ fontSize: '15px', fontWeight: 800, color: colors.text1, letterSpacing: '-0.02em', lineHeight: 1.2 }}>
-            GREAT OLIVE
+            {APP_NAME}
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
             <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: colors.accent.green, boxShadow: `0 0 6px ${colors.accent.green}` }} />

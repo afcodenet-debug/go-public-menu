@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { api } from '../lib/api-client';
 import { useProductStore } from '../features/products/hooks/useProductStore';
 import { ReceiptData } from '../utils/receiptPrinter';
+import { APP_NAME } from '../lib/app-config';
 
 export interface POSCartItem {
   productId: number;
@@ -299,7 +300,7 @@ export const usePOSStore = create<POSStore>((set, get) => ({
 
       const receiptData = {
         business: {
-          name: 'GREAT OLIVE',
+          name: APP_NAME,
           address: '123 Restaurant Street',
           phone: '+1 (555) 123-4567'
         },
@@ -326,7 +327,7 @@ export const usePOSStore = create<POSStore>((set, get) => ({
           method: paymentMethod.toUpperCase(),
           amount: subtotal - discount + tax
         },
-        footer: 'Thank you for your visit!\nSee you soon at GREAT OLIVE'
+        footer: `Thank you for your visit!\nSee you soon at ${APP_NAME}`
       };
 
       if (result.partial && result.remainingOrder) {

@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { APP_NAME } from '../lib/app-config';
 import { useI18n } from '../lib/i18n';  // for future full i18n; we use local override for public QR default EN
 import { 
   UtensilsCrossed, 
@@ -349,7 +350,7 @@ const PublicMenuPage = () => {
         </div>
 
         {/* Progress bar */}
-        <div style={{ height: 3, background: T.bg3, borderRadius: 2, overflow: 'hidden', marginTop: 2 }}>
+        <div style={{ height: 3, background: T.bg3, borderRadius: 2, overflow: 'hidden', marginTop: 6 }}>
           <div style={{
             height: '100%',
             width: `${Math.min(((currentIndex + 1) / steps.length) * 100, 100)}%`,
@@ -1096,7 +1097,7 @@ const PublicMenuPage = () => {
                    localStorage.removeItem(`qr_customer_${token}`);
                  }
                }}
-               style={{ position: 'absolute', top: 55, right: 14, ...btnGhost, padding: '6px 12px', fontSize: 11, zIndex: 10 }}
+                style={{ position: 'absolute', top: 48, right: 14, ...btnGhost, padding: '6px 12px', fontSize: 11, zIndex: 10 }}
              >
                {pendingOrderStatus === 'paid' ? t('qrMenu.clear') : t('qrMenu.close')}
              </button>
@@ -1125,7 +1126,7 @@ const PublicMenuPage = () => {
                 GO
               </div>
               <div>
-                <div style={{ fontFamily: T.serif, fontSize: 20, fontWeight: 700, color: T.text, letterSpacing: '0.06em', lineHeight: 1.1 }}>GREAT OLIVE</div>
+                 <div style={{ fontFamily: T.serif, fontSize: 20, fontWeight: 700, color: T.text, letterSpacing: '0.06em', lineHeight: 1.1 }}>{APP_NAME}</div>
                 <div style={{ fontSize: 9, letterSpacing: '0.22em', textTransform: 'uppercase', color: T.text2, marginTop: 2 }}>Restaurant &amp; Bar</div>
               </div>
             </div>
@@ -1177,7 +1178,18 @@ const PublicMenuPage = () => {
 
       {/* ══ CATEGORY NAV ════════════════════════════════════════════════════ */}
       {menu.length > 0 && (
-        <div className="qr-cat-nav" style={{ display: 'flex', gap: 7, overflowX: 'auto', padding: '13px 16px', background: T.bg2, borderBottom: `1px solid rgba(255,255,255,0.04)` }}>
+         <div className="qr-cat-nav" style={{ 
+           display: 'flex', 
+           gap: 7, 
+           overflowX: 'auto', 
+           padding: '13px 16px', 
+           background: T.bg2, 
+           borderBottom: `1px solid rgba(255,255,255,0.04)`,
+           position: 'sticky',
+           top: 0,
+           zIndex: 60,
+           boxShadow: '0 4px 12px rgba(0,0,0,0.3)'
+         }}>
           {menu.map(cat => (
             <button key={cat.id} className="qr-cat-btn"
               onClick={() => scrollToCategory(cat.id)}

@@ -274,4 +274,9 @@ export class ProductSyncService {
     this.lastPullTimestamp = null;
     return this.pullProductsFromSupabase(businessId);
   }
+
+  /** Reset the in-memory pull cursor so the next sync cycle will pull everything */
+  resetPullCursor(): void {
+    this.lastPullTimestamp = null;
+  }
 }

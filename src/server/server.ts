@@ -1,5 +1,4 @@
 import express from 'express';
-import cors from 'cors';
 import menuRoutes from './routes/menu';
 import tablesRoutes from './routes/tables';
 import productsRoutes from './routes/products';

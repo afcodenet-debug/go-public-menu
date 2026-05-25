@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useAuthStore } from '../../stores/useAuthStore';
 import { useNavigate } from 'react-router-dom';
 import { useI18n } from '../../lib/i18n';
+import { APP_NAME } from '../../lib/app-config';
 
 const LoginPage = () => {
   const [identity, setIdentity]   = useState('');
@@ -224,7 +225,7 @@ const LoginPage = () => {
           </span>
           <span style={{ width: 1, height: 12, background: 'rgba(255,255,255,0.07)' }} />
           <span style={{ fontSize: 10.5, color: 'rgba(255,255,255,0.18)', fontWeight: 600 }}>
-            © 2026 Great Olive
+            © 2026 {APP_NAME}
           </span>
         </div>
 

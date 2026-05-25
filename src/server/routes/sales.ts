@@ -2,6 +2,7 @@ import express from 'express';
 import db from '../db/database';
 import { notifyOrderCheckout } from '../services/notification.service';
 import { requirePermission } from '../middleware/auth';
+import { getProductSyncService } from '../../sync';
 
 const router = express.Router();
 
@@ -103,13 +104,6 @@ router.post('/checkout', requirePermission('PROCESS_PAYMENTS'), (req, res) => {
         const available = Number(product.stock_quantity ?? 0);
         const requested = Number(item.quantity);
 
-        if (isRemoteQrOrder) {
-          // For orders that came from the public QR menu, we allow the sale
-          // even if local stock is insufficient (the "sale" happened on the customer side).
-          fulfilledItems.push({ ...item, quantity: requested, product });
-          continue;
-        }
-
         if (available <= 0) {
           blockedItems.push({ ...item, quantity: requested });
           continue;
@@ -125,7 +119,7 @@ router.post('/checkout', requirePermission('PROCESS_PAYMENTS'), (req, res) => {
 
       const fulfilledSubtotal = fulfilledItems.reduce((sum, item) => sum + Number(item.price) * Number(item.quantity), 0);
 
-      if (fulfilledSubtotal <= 0 && !isRemoteQrOrder) {
+      if (fulfilledSubtotal <= 0) {
         const blockedNames = blockedItems.map(item => item.name).join(', ');
         throw new Error(`Insufficient stock for ${blockedNames}`);
       }
@@ -184,28 +178,37 @@ router.post('/checkout', requirePermission('PROCESS_PAYMENTS'), (req, res) => {
 
         itemStmt.run(saleId, item.productId, item.quantity, item.price, item.price * item.quantity);
 
-        // For orders pulled from the public QR menu (remote_id present), we do NOT touch local stock.
-        // The "sale" conceptually happened on the customer-facing side.
-        if (!isRemoteQrOrder) {
-          db.prepare('UPDATE products SET stock_quantity = stock_quantity - ? WHERE id = ?').run(item.quantity, item.productId);
+        // Always decrement stock and record movement for all fulfilled orders (including QR menu orders)
+        db.prepare('UPDATE products SET stock_quantity = stock_quantity - ? WHERE id = ?').run(item.quantity, item.productId);
 
-          try {
-            movementStmt.run(
-              item.productId,
-              'sale',
-              quantityBefore,
-              quantityChanged,
-              quantityAfter,
-              unitCost,
-              totalValue,
-              `Sale ${invoiceNumber}`,
-              user_id || null,
-              'sale',
-              saleId
-            );
-          } catch (movementError) {
-            console.error('[Sales] Failed to record inventory movement:', movementError);
-          }
+        try {
+          movementStmt.run(
+            item.productId,
+            'sale',
+            quantityBefore,
+            quantityChanged,
+            quantityAfter,
+            unitCost,
+            totalValue,
+            `Sale ${invoiceNumber}`,
+            user_id || null,
+            'sale',
+            saleId
+          );
+        } catch (movementError) {
+          console.error('[Sales] Failed to record inventory movement:', movementError);
+        }
+
+        // Queue product stock change for Supabase (outbox)
+        try {
+          const sync = getProductSyncService();
+          sync.queueChange('product', 'update', {
+            id: item.productId,
+            stock_quantity: quantityAfter,
+            updated_at: new Date().toISOString(),
+          });
+        } catch (syncErr) {
+          console.warn('[Sync] ProductSyncService not initialized — stock change for product', item.productId, 'will be retried later');
         }
       }
 

@@ -48,7 +48,7 @@ setTimeout(() => {
             </style>
           </head>
           <body>
-            <div class="title">GREAT OLIVE</div>
+            <div class="title">THE GREAT OLIVE</div>
             <div class="info">Table Assignment</div>
             <div class="info">Table: ${tableNumber}</div>
             <div class="info">Waiter: ${waiterName}</div>

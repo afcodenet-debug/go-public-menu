@@ -3,7 +3,7 @@ import path from 'path';
 import db from '../db/database';
 import { requireRole } from '../middleware/auth';
 import fs from 'fs';
-// import { syncService } from '../sync';
+import { getProductSyncService } from '../../sync';
 import { AnalyticsService } from '../services/analytics.service';
 import { notifyStockAdjustment, notifyNewProduct, loadRawSettings } from '../services/notification.service';
 import { env } from '../config/env';
@@ -434,6 +434,18 @@ router.post('/:id/adjust-stock', requireRole(['admin', 'manager']), (req, res) =
       user_id || null,
       'manual'
     );
+
+    // Queue for Supabase push (outbox pattern)
+    try {
+      const sync = getProductSyncService();
+      sync.queueChangeInsideTransaction('product', 'update', {
+        id: Number(id),
+        stock_quantity: qtyAfter,
+        updated_at: new Date().toISOString(),
+      });
+    } catch (syncErr) {
+      console.warn('[Sync] ProductSyncService not ready for stock adjustment, will retry on next cycle');
+    }
 
     return db.prepare('SELECT * FROM products WHERE id = ?').get(id);
   });
