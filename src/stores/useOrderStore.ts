@@ -29,6 +29,9 @@ export interface Order {
   customer_id?: number | null;
   customer_phone?: string;
   customer_name?: string;
+  // QR / remote orders (pulled from Supabase via the light pull worker)
+  remote_id?: number;
+  source?: 'local' | 'qr' | string;
 }
 
 interface OrderStore {

@@ -4,6 +4,7 @@ import { createClient } from '@supabase/supabase-js';
 import { getProductRepository } from '../products/repositories/product.repository.provider';
 import { getTableRepository } from '../tables/repositories/table.repository.provider';
 import { env } from '../config/env';
+import db from '../db/database';
 
 const router = express.Router();
 
@@ -520,6 +521,77 @@ router.post('/checkout', async (req, res) => {
   } catch (err: any) {
     console.error('[Public Menu] Checkout error:', err);
     return res.status(500).json({ error: 'Erreur lors de la création de la commande' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Public order status for QR customers (reads directly from Supabase)
+// This allows customers to see real-time status updates (confirmed, preparing, ready...)
+// even if the local POS pull worker hasn't synced yet.
+// GET /api/menu/order-status/:orderId
+// ─────────────────────────────────────────────────────────────────────────────
+router.get('/order-status/:orderId', async (req, res) => {
+  const { orderId } = req.params;
+
+  if (!orderId) {
+    return res.status(400).json({ error: 'Order ID is required' });
+  }
+
+  try {
+    const supabaseUrl = process.env.SUPABASE_URL;
+    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+    if (!supabaseUrl || !supabaseKey) {
+      return res.status(500).json({ error: 'Supabase not configured' });
+    }
+
+    const supabase = createClient(supabaseUrl, supabaseKey, {
+      auth: { persistSession: false },
+    });
+
+    const { data, error } = await supabase
+      .from('orders')
+      .select('id, status, table_id, total, items, created_at, updated_at')
+      .eq('id', Number(orderId))
+      .single();
+
+    if (error || !data) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    // Enrich items with current local prices (important for "My order" list in public QR menu)
+    let items = data.items || [];
+    if (db && Array.isArray(items)) {
+      try {
+        const getPriceStmt = db.prepare('SELECT selling_price FROM products WHERE id = ?').pluck();
+        items = items.map((it: any) => {
+          const pid = it.product_id || it.productId;
+          if (pid != null) {
+            const existingPrice = Number(it.price ?? it.unit_price ?? 0);
+            if (existingPrice <= 0) {
+              const price = Number(getPriceStmt.get(pid) || 0);
+              return { ...it, price };
+            }
+          }
+          return it;
+        });
+      } catch (e) {
+        console.warn('[Public Menu] Price enrichment failed for order-status', e);
+      }
+    }
+
+    res.json({
+      id: data.id,
+      status: data.status,
+      table_id: data.table_id,
+      total: data.total,
+      items,
+      created_at: data.created_at,
+      updated_at: data.updated_at,
+    });
+  } catch (err: any) {
+    console.error('[Public Menu] Order status error:', err);
+    res.status(500).json({ error: 'Failed to fetch order status' });
   }
 });
 

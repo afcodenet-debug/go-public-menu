@@ -57,6 +57,7 @@ router.get('/', (req, res) => {
     let query = `
       SELECT
         o.id, o.table_id, o.waiter_id, o.status, o.total, o.created_at,
+        o.remote_id, o.source,
         t.table_number,
         u.full_name as waiter_name,
         NULL as customer_phone,

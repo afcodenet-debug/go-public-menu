@@ -775,6 +775,86 @@ const T = {
     outOfStockSub:        d('Zero units on shelf','Unités épuisées','Zero unidades em stock'),
     lowStockSub:          d('Below minimum level','Sous le seuil','Abaixo do nível mínimo'),
   },
+
+  // ── qrMenu (Public QR Menu - default English) ─────────────────────────
+  qrMenu: {
+    // Language
+    langEn: d('EN', 'EN', 'EN'),
+    langFr: d('FR', 'FR', 'FR'),
+    langPt: d('PT', 'PT', 'PT'),
+
+    // General
+    loading: d('Menu loading…', 'Carte en préparation…', 'A carregar o menu…'),
+    error: d('Unable to load the menu', 'Impossible de charger la carte', 'Não foi possível carregar o menu'),
+    tableNotFound: d('Table not found', 'Table introuvable', 'Mesa não encontrada'),
+    back: d('Back', 'Retour', 'Voltar'),
+
+    // Order banner
+    orderNumber: d('Order #{num}', 'Commande #{num}', 'Pedido #{num}'),
+    myOrder: d('My order', 'Ma commande', 'Meu pedido'),
+    hideOrder: d('Hide order', 'Cacher commande', 'Ocultar pedido'),
+    hide: d('Hide', 'Masquer', 'Ocultar'),
+    itemsCount: d('{count} item{plural}', '{count} article{plural}', '{count} item{plural}'),
+    total: d('Total', 'Total', 'Total'),
+
+    // Status messages (short versions for banner)
+    statusPending: d('Order received', 'Commande reçue', 'Pedido recebido'),
+    statusConfirmed: d('Confirmed', 'Confirmée', 'Confirmado'),
+    statusPreparing: d('In preparation', 'En préparation', 'Em preparação'),
+    statusReady: d('Ready', 'Prête', 'Pronto'),
+    statusServed: d('Served', 'Servie', 'Servido'),
+    statusPaid: d('Paid - Thank you!', 'Payée - Merci !', 'Pago - Obrigado!'),
+    statusCancelled: d('Cancelled', 'Annulée', 'Cancelado'),
+    statusRejected: d('Rejected', 'Rejetée', 'Rejeitado'),
+
+    // Tracker labels
+    trackerReceived: d('Received', 'Reçue', 'Recebido'),
+    trackerConfirmed: d('Confirmed', 'Confirmée', 'Confirmado'),
+    trackerPreparing: d('Preparing', 'Préparation', 'Preparando'),
+    trackerReady: d('Ready', 'Prête', 'Pronto'),
+    trackerServed: d('Served', 'Servie', 'Servido'),
+
+    // PIN / Validation
+    enterPin: d('Enter your 6-digit PIN', 'Entrez votre code PIN (6 chiffres)', 'Digite seu PIN de 6 dígitos'),
+    validateOrder: d('Validate order', 'Valider la commande', 'Validar pedido'),
+    pinIncorrect: d('Incorrect PIN', 'Code PIN incorrect', 'PIN incorreto'),
+    createAccount: d('Create / recover account', 'Créer / récupérer votre compte', 'Criar / recuperar conta'),
+    phoneNumber: d('Your phone number', 'Votre téléphone', 'Seu número de telefone'),
+    createAccountBtn: d('Create account', 'Créer le compte', 'Criar conta'),
+    iHavePin: d('I have a PIN', "J'ai un PIN", 'Tenho um PIN'),
+    orderPrepared: d('Order prepared. Enter your 6-digit PIN.', 'Commande préparée. Entrez votre code PIN (6 chiffres).', 'Pedido preparado. Digite seu PIN de 6 dígitos.'),
+    clientValidated: d('Validated by client — awaiting staff', 'Validée par le client — en attente du personnel', 'Validado pelo cliente — aguardando a equipe'),
+    close:             d('Close', 'Fermer', 'Fechar'),
+    notifyStock:       d('Thank you! The server has been notified for "{item}".', 'Merci ! Le serveur a été notifié pour "{item}".', 'Obrigado! O servidor foi notificado para "{item}".'),
+    notifyUnavailable: d('Thank you! Please inform your server that "{item}" is no longer available.', 'Merci ! Informez votre serveur que "{item}" n\'est plus disponible.', 'Obrigado! Informe o seu servidor que "{item}" não está mais disponível.'),
+    phonePlaceholder:  d('Your phone (e.g. 0612345678)', 'Votre téléphone (ex: 0612345678)', 'Seu telefone (ex: 0612345678)'),
+    notesPlaceholder2: d('Allergies, preferences, kitchen instructions...', 'Allergies, préférences, instructions cuisine...', 'Alergias, preferências, instruções de cozinha...'),
+    changePhone:       d('Change number', 'Changer de numéro', 'Mudar número'),
+    add:               d('Add', 'Ajouter', 'Adicionar'),
+    checkoutBtn:       d('Checkout', 'Passer la commande', 'Finalizar pedido'),
+    cartTitle:         d('Your cart', 'Votre panier', 'Seu carrinho'),
+    orderInProgress:   d('Order in progress', 'Commande en cours', 'Pedido em andamento'),
+    menuFooter:        d('General menu · Real-time updates', 'Carte générale · Mise à jour en temps réel', 'Menu geral · Atualizações em tempo real'),
+
+    // Cart
+    yourOrder: d('Your order', 'Votre commande', 'Seu pedido'),
+    addToCart: d('Add', 'Ajouter', 'Adicionar'),
+    viewCart: d('View cart', 'Voir le panier', 'Ver carrinho'),
+    cartEmpty: d('Your cart is empty', 'Votre panier est vide', 'Seu carrinho está vazio'),
+    checkout: d('Checkout', 'Passer la commande', 'Finalizar pedido'),
+    orderSent: d('Order sent! The staff will process it.', 'Commande envoyée ! Le personnel va la traiter.', 'Pedido enviado! A equipe vai processar.'),
+
+    // Stock
+    outOfStock: d('Out of stock', 'Épuisé', 'Esgotado'),
+    lowStock: d('Limited stock - {qty}', 'Stock limité - {qty}', 'Estoque limitado - {qty}'),
+    inStock: d('Available', 'Disponible', 'Disponível'),
+    notify: d('Notify', 'Notifier', 'Notificar'),
+
+    // Misc
+    specialInstructions: d('Special instructions (optional)', 'Instructions spéciales (optionnel)', 'Instruções especiais (opcional)'),
+    notesPlaceholder: d('Allergies, no onions, etc.', 'Allergies, sans oignons, etc.', 'Alergias, sem cebola, etc.'),
+    currency: d('ZMW', 'ZMW', 'ZMW'),
+  },
 };
 
 /* ─── Type-safe access ──────────────────────────────────────────────── */

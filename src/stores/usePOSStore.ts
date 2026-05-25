@@ -41,7 +41,7 @@ interface POSStore {
 
   // Table Actions
   selectTable: (tableId: number | null) => void;
-  loadOrderForTable: (tableId: number) => Promise<void>;
+  loadOrderForTable: (tableId: number, orderId?: number) => Promise<void>;
 
   // Order Actions
   saveOrder: () => Promise<boolean>;
@@ -135,13 +135,35 @@ export const usePOSStore = create<POSStore>((set, get) => ({
     get().loadOrderForTable(tableId);
   },
 
-  loadOrderForTable: async (tableId) => {
+  loadOrderForTable: async (tableId, orderId) => {
     set({ isLoading: true, error: null });
     try {
-      const { activeOrders } = (await api.orders.getAll({ table_id: tableId })) as any;
-      const existingOrder = (Array.isArray(activeOrders)
-        ? (activeOrders as any[]).find((order: any) => order.table_id === tableId && order.status !== 'paid' && order.status !== 'cancelled')
-        : null) as any;
+      let existingOrder: any = null;
+
+      if (orderId) {
+        // Preferred path for explicit cashout from Orders page: load the exact order (even if 'served')
+        // getById always returns normalized items (including remote QR snapshot + local prices)
+        try {
+          existingOrder = await api.orders.getById(orderId);
+          if (existingOrder && existingOrder.table_id !== tableId) {
+            existingOrder = null; // safety
+          }
+        } catch (e) {
+          console.warn('[POS] Failed to load specific orderId', orderId, e);
+        }
+      }
+
+      if (!existingOrder) {
+        // Fallback: find the current active order on the table via the normal list
+        const response = (await api.orders.getAll({ table_id: tableId })) as any;
+        const activeOrders = Array.isArray(response)
+          ? response
+          : (response?.activeOrders || response?.orders || []);
+
+        existingOrder = (Array.isArray(activeOrders)
+          ? (activeOrders as any[]).find((order: any) => order.table_id === tableId && order.status !== 'paid' && order.status !== 'cancelled')
+          : null) as any;
+      }
 
       const { cart: currentCart, currentOrder: existingCurrentOrder } = get();
       const hasUnsavedDraft = currentCart.length > 0 && !existingCurrentOrder;

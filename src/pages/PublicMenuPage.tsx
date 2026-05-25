@@ -1,6 +1,17 @@
 import { useEffect, useState, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { UtensilsCrossed, CheckCircle2, XCircle, Info } from 'lucide-react';
+import { useI18n } from '../lib/i18n';  // for future full i18n; we use local override for public QR default EN
+import { 
+  UtensilsCrossed, 
+  CheckCircle2, 
+  XCircle, 
+  Info, 
+  Clock, 
+  Check, 
+  X, 
+  Package, 
+  ChefHat 
+} from 'lucide-react';
 
 /**
  * API base URL (backend déployé séparément).
@@ -14,7 +25,8 @@ const API_BASE_URL =
     (import.meta as any).env.VITE_API_BASE_URL) ||
   '';
 
-const apiFallbackBaseUrl = 'https://reat-olive-api.onrender.com';
+// const apiFallbackBaseUrl = 'https://reat-olive-api.onrender.com';
+const apiFallbackBaseUrl = 'http://localhost:3001';   // ← change ici
 
 const apiUrl = (endpoint: string) => {
   const baseFromEnv = String(API_BASE_URL || '').replace(/\/$/, '');
@@ -22,6 +34,43 @@ const apiUrl = (endpoint: string) => {
 
   return `${base}${endpoint}`;
 };
+
+// ─── Local QR Menu Translator (default English, independent of staff settings) ───
+import { translations } from '../lib/i18n';
+
+function qrT(lang: 'en' | 'fr' | 'pt', key: string, params?: Record<string, string | number>): string {
+  const qrMenuNs = (translations as any).qrMenu || {};
+  
+  // Allow calling with or without "qrMenu." prefix
+  const cleanKey = key.startsWith('qrMenu.') ? key.slice(7) : key;
+  const parts = cleanKey.split('.');
+  let node: any = qrMenuNs;
+
+  for (const part of parts) {
+    if (node && typeof node === 'object' && part in node) {
+      node = node[part];
+    } else {
+      return key; // fallback to raw key
+    }
+  }
+
+  // Extract the translated string for the current lang (or en fallback)
+  let text: string;
+  if (node && typeof node === 'object') {
+    text = (lang in node ? String(node[lang]) : ( 'en' in node ? String(node['en']) : key ));
+  } else if (typeof node === 'string') {
+    text = node;
+  } else {
+    text = key;
+  }
+
+  // Always apply param interpolation AFTER getting the text
+  if (params) {
+    text = text.replace(/\{(\w+)\}/g, (_, k) => String(params[k] ?? `{${k}}`));
+  }
+
+  return text;
+}
 
 // ─── Interfaces (inchangées) ──────────────────────────────────────────────────
 interface MenuItem {
@@ -157,33 +206,134 @@ const StatusChip = ({ status }: { status: string }) => {
   );
 };
 
-const StockBadge = ({ item, onAlert }: { item: MenuItem; onAlert: () => void }) => {
-  const dot = <span style={{ width: 4, height: 4, borderRadius: '50%', background: 'currentColor', flexShrink: 0 }} />;
 
-  if (!item.in_stock) return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 10, fontWeight: 600, letterSpacing: '0.07em', textTransform: 'uppercase', borderRadius: 20, padding: '4px 10px', background: T.redBg, color: T.red, border: `1px solid ${T.redBorder}` }}>
-      {dot}Épuisé
-      <button onClick={onAlert} style={{ ...btnLink, color: T.text3, fontSize: 10, paddingLeft: 4 }}>Notifier</button>
-    </span>
-  );
 
-  if (item.stock_quantity != null && item.stock_quantity <= (item.minimum_stock || 5)) return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 10, fontWeight: 600, letterSpacing: '0.07em', textTransform: 'uppercase', borderRadius: 20, padding: '4px 10px', background: T.amberBg, color: T.amber, border: `1px solid ${T.amberBorder}` }}>
-      {dot}Stock limité — {item.stock_quantity}
-    </span>
-  );
 
-  return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 10, fontWeight: 600, letterSpacing: '0.07em', textTransform: 'uppercase', borderRadius: 20, padding: '4px 10px', background: T.greenBg, color: T.green, border: `1px solid ${T.greenBorder}` }}>
-      {dot}Disponible
-    </span>
-  );
-};
 
 // ─── Main component ───────────────────────────────────────────────────────────
 const PublicMenuPage = () => {
   const [searchParams] = useSearchParams();
   const token = searchParams.get('token') || '';
+
+  // Local language for public QR Menu (independent of staff settings)
+  // Default: English as requested
+  const [qrLang, setQrLang] = useState<'en' | 'fr' | 'pt'>(() => {
+    if (!token) return 'en';
+    const saved = localStorage.getItem(`qr_lang_${token}`);
+    return (saved as 'en' | 'fr' | 'pt') || 'en';
+  });
+
+  const changeQrLang = (l: 'en' | 'fr' | 'pt') => {
+    setQrLang(l);
+    localStorage.setItem(`qr_lang_${token}`, l);
+  };
+
+  // Bound translator for this public page (uses local qrLang, English default)
+  const t = (key: string, params?: Record<string, string | number>) => qrT(qrLang, key, params);
+
+  const StockBadge = ({ item, onAlert }: { item: MenuItem; onAlert: () => void }) => {
+    const dot = <span style={{ width: 4, height: 4, borderRadius: '50%', background: 'currentColor', flexShrink: 0 }} />;
+
+    if (!item.in_stock) return (
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 10, fontWeight: 600, letterSpacing: '0.07em', textTransform: 'uppercase', borderRadius: 20, padding: '4px 10px', background: T.redBg, color: T.red, border: `1px solid ${T.redBorder}` }}>
+        {dot}{t('qrMenu.outOfStock')}
+        <button onClick={onAlert} style={{ ...btnLink, color: T.text3, fontSize: 10, paddingLeft: 4 }}>{t('qrMenu.notify')}</button>
+      </span>
+    );
+
+    if (item.stock_quantity != null && item.stock_quantity <= (item.minimum_stock || 5)) return (
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 10, fontWeight: 600, letterSpacing: '0.07em', textTransform: 'uppercase', borderRadius: 20, padding: '4px 10px', background: T.amberBg, color: T.amber, border: `1px solid ${T.amberBorder}` }}>
+        {dot}{t('qrMenu.lowStock', { qty: item.stock_quantity })}
+      </span>
+    );
+
+    return (
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 10, fontWeight: 600, letterSpacing: '0.07em', textTransform: 'uppercase', borderRadius: 20, padding: '4px 10px', background: T.greenBg, color: T.green, border: `1px solid ${T.greenBorder}` }}>
+        {dot}{t('qrMenu.inStock')}
+      </span>
+    );
+  };
+
+  // ─── Beautiful Order Status Tracker (moved inside for t() access) ───────────
+  const OrderStatusTracker = ({ status }: { status: string }) => {
+    const steps = [
+      { key: 'pending',    label: t('qrMenu.trackerReceived'),   icon: <Clock size={14} /> },
+      { key: 'confirmed',  label: t('qrMenu.trackerConfirmed'),  icon: <CheckCircle2 size={14} /> },
+      { key: 'preparing',  label: t('qrMenu.trackerPreparing'),  icon: <ChefHat size={14} /> },
+      { key: 'ready',      label: t('qrMenu.trackerReady'),      icon: <Package size={14} /> },
+      { key: 'served',     label: t('qrMenu.trackerServed'),     icon: <UtensilsCrossed size={14} /> },
+    ];
+
+    const currentIndex = steps.findIndex(s => s.key === status);
+    const isFinal = ['paid', 'served'].includes(status);
+    const isError = ['cancelled', 'rejected'].includes(status);
+
+    if (isError) {
+      return (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', background: T.redBg, border: `1px solid ${T.redBorder}`, borderRadius: 12 }}>
+          <X size={16} color={T.red} />
+          <span style={{ fontSize: 13, fontWeight: 600, color: T.red }}>
+            {STATUS_LABELS[status] || t('qrMenu.statusCancelled')}
+          </span>
+        </div>
+      );
+    }
+
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4, justifyContent: 'space-between' }}>
+          {steps.map((step, index) => {
+            const isActive = index === currentIndex;
+            const isDone = currentIndex > index || isFinal;
+
+            return (
+              <div key={step.key} style={{ 
+                display: 'flex', 
+                flexDirection: 'column', 
+                alignItems: 'center', 
+                flex: 1,
+                opacity: isDone || isActive ? 1 : 0.4 
+              }}>
+                <div style={{
+                  width: 28, height: 28,
+                  borderRadius: '50%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  background: isActive ? T.gold : (isDone ? T.green : T.bg3),
+                  color: isActive ? T.bg : (isDone ? '#fff' : T.text3),
+                  border: isActive ? '2px solid #fff' : '1px solid ' + (isDone ? T.green : T.goldBorder),
+                  transition: 'all 0.2s ease',
+                }}>
+                  {isDone && !isActive ? <Check size={14} /> : step.icon}
+                </div>
+                <div style={{ 
+                  fontSize: 9, 
+                  fontWeight: isActive ? 700 : 500, 
+                  color: isActive ? T.gold2 : T.text3, 
+                  marginTop: 4,
+                  textAlign: 'center',
+                  letterSpacing: '0.02em'
+                }}>
+                  {step.label}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Progress bar */}
+        <div style={{ height: 3, background: T.bg3, borderRadius: 2, overflow: 'hidden', marginTop: 2 }}>
+          <div style={{
+            height: '100%',
+            width: `${Math.min(((currentIndex + 1) / steps.length) * 100, 100)}%`,
+            background: isFinal ? T.green : T.gold,
+            transition: 'width 0.4s ease',
+          }} />
+        </div>
+      </div>
+    );
+  };
 
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState<string | null>(null);
@@ -211,6 +361,8 @@ const PublicMenuPage = () => {
   const [pendingOrderStatus, setPendingOrderStatus]   = useState<string | null>(null);
   const [pendingOrderTotal, setPendingOrderTotal]     = useState<number | null>(null);
   const [pendingOrderItemCount, setPendingOrderItemCount] = useState<number>(0);
+  const [pendingOrderItems, setPendingOrderItems] = useState<any[]>([]);
+  const [showOrderItems, setShowOrderItems] = useState(false);
   const [bannerDismissed, setBannerDismissed] = useState(false);
 
   // ─── Aesthetic Toast Notifications for QR Customer Experience ─────────────
@@ -241,24 +393,33 @@ const PublicMenuPage = () => {
 
   // ─── Persist helpers ──────────────────────────────────────────────────────
   const buildStatusMessage = (st: string) => {
+    const num = pendingOrderId ?? '';
     switch (st) {
-      case 'pending':   return `Commande #${pendingOrderId ?? ''} · en attente`;
-      case 'confirmed': return `Commande #${pendingOrderId ?? ''} · confirmée`;
-      case 'preparing': return `Commande #${pendingOrderId ?? ''} · en préparation`;
-      case 'ready':     return `Commande #${pendingOrderId ?? ''} · prête`;
-      case 'served':    return `Commande #${pendingOrderId ?? ''} · servie`;
-      case 'paid':      return `Commande #${pendingOrderId ?? ''} · Montant total à payer`;
-      case 'cancelled': return `Commande #${pendingOrderId ?? ''} · annulée`;
-      case 'rejected':  return `Commande #${pendingOrderId ?? ''} · rejetée`;
-      default:          return `Commande #${pendingOrderId ?? ''} · mise à jour`;
+      case 'pending':   return `${t('qrMenu.orderNumber', { num })} · ${t('qrMenu.statusPending')}`;
+      case 'confirmed': return `${t('qrMenu.orderNumber', { num })} · ${t('qrMenu.statusConfirmed')}`;
+      case 'preparing': return `${t('qrMenu.orderNumber', { num })} · ${t('qrMenu.statusPreparing')}`;
+      case 'ready':     return `${t('qrMenu.orderNumber', { num })} · ${t('qrMenu.statusReady')}`;
+      case 'served':    return `${t('qrMenu.orderNumber', { num })} · ${t('qrMenu.statusServed')}`;
+      case 'paid':      return `${t('qrMenu.orderNumber', { num })} · ${t('qrMenu.statusPaid')}`;
+      case 'cancelled': return `${t('qrMenu.orderNumber', { num })} · ${t('qrMenu.statusCancelled')}`;
+      case 'rejected':  return `${t('qrMenu.orderNumber', { num })} · ${t('qrMenu.statusRejected')}`;
+      default:          return `${t('qrMenu.orderNumber', { num })} · ${t('qrMenu.statusPending')}`;
     }
   };
 
-  const persistOrder = (id: number | null, msg: string | null, st: string | null, tot: number | null, activeId: number | null = null, itemCount: number | null = null) => {
+  const persistOrder = (id: number | null, msg: string | null, st: string | null, tot: number | null, activeId: number | null = null, itemCount: number | null = null, items?: any[]) => {
     if (!token) return;
     const key = `qr_pending_order_${token}`;
     if (id != null && msg) {
-      localStorage.setItem(key, JSON.stringify({ orderId: id, activeOrderId: activeId || id, message: msg, status: st, total: tot, itemCount }));
+      localStorage.setItem(key, JSON.stringify({ 
+        orderId: id, 
+        activeOrderId: activeId || id, 
+        message: msg, 
+        status: st, 
+        total: tot, 
+        itemCount, 
+        items: items || [] 
+      }));
     } else { localStorage.removeItem(key); }
   };
 
@@ -284,7 +445,7 @@ const PublicMenuPage = () => {
       if (existing) return { ...prev, [item.id]: { ...existing, quantity: existing.quantity + 1, price, currency: item.currency ?? null, name: item.name } };
       return { ...prev, [item.id]: { productId: item.id, quantity: 1, price, currency: item.currency ?? null, name: item.name } };
     });
-    showToast('success', `${item.name} ajouté au panier`);
+    showToast('success', `${item.name} ${t('qrMenu.addToCart').toLowerCase()}`);
   };
 
   const updateQty = (productId: number, delta: number) => {
@@ -304,7 +465,7 @@ const PublicMenuPage = () => {
   // ─── Checkout ─────────────────────────────────────────────────────────────
   const checkout = () => {
     if (!token)        { showToast('error', 'Token de menu manquant.'); return; }
-    if (!cartItems.length) { showToast('error', 'Votre panier est vide.'); return; }
+    if (!cartItems.length) { showToast('error', t('qrMenu.cartEmpty') + '.'); return; }
     if (customerPhone) {
       const d = customerPhone.replace(/\D/g, '');
       if (d.length < 9)  { showToast('error', 'Numéro minimum 9 chiffres.'); return; }
@@ -324,7 +485,7 @@ const PublicMenuPage = () => {
     setCart({}); setShowAccountCreation(false); setPinAttempts(0); setOrderNotes('');
     setActiveOrderId(null);
     setPendingOrderId(null);
-    const msg = "Commande préparée. Entrez votre code PIN (6 chiffres) pour l'envoyer.";
+      const msg = t('qrMenu.orderPrepared');
     setPendingOrderMessage(msg); setPendingOrderTotal(cartTotal);
     persistOrder(null, msg, null, cartTotal);
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -342,9 +503,9 @@ const PublicMenuPage = () => {
           message: `Table ${table?.table_number} — "${item.name}" (${categoryName}) hors stock.`,
         }),
       });
-      showToast('success', `Merci ! Le serveur a été notifié pour "${item.name}".`);
+      showToast('success', t('qrMenu.notifyStock', { item: item.name }));
     } catch {
-      showToast('info', `Merci ! Informez votre serveur que "${item.name}" n'est plus disponible.`);
+      showToast('info', t('qrMenu.notifyUnavailable', { item: item.name }));
     }
   };
 
@@ -373,7 +534,7 @@ const PublicMenuPage = () => {
         'success',
         data.alreadyExists
           ? 'Numéro déjà enregistré. Bienvenue !'
-          : `Compte créé ! Téléphone: ${data.phone_number} — PIN: ${data.pin_code || digits.slice(-6)}`
+          : `${t('qrMenu.createAccount')}! ${t('qrMenu.phoneNumber')}: ${data.phone_number} — PIN: ${data.pin_code || digits.slice(-6)}`
       );
       setShowAccountCreation(false);
     } catch (e: any) {
@@ -383,11 +544,11 @@ const PublicMenuPage = () => {
 
   const validateOrderWithPin = async () => {
     if (!localOrderData) {
-      showToast('error', 'Commande non préparée.');
+      showToast('error', t('qrMenu.error'));
       return;
     }
     if (!validationPinInput.trim()) {
-      showToast('error', 'Saisissez votre code PIN.');
+      showToast('error', t('qrMenu.enterPin'));
       return;
     }
     setIsValidatingOrder(true);
@@ -408,7 +569,7 @@ const PublicMenuPage = () => {
       });
       const coData = await coRes.json().catch(() => ({}));
       if (!coRes.ok) {
-        const err = coData?.error || 'Code PIN incorrect';
+        const err = coData?.error || t('qrMenu.pinIncorrect');
         if (coData?.pinNotFound || coData?.requiresRegistration) {
           const n = pinAttempts + 1;
           setPinAttempts(n);
@@ -427,7 +588,7 @@ const PublicMenuPage = () => {
       setOrderClientValidated(true);
       setValidationPinInput('');
       setPinAttempts(0);
-      const msg = `Commande #${createdOrderId} validée. En attente du personnel...`;
+      const msg = `${t('qrMenu.orderNumber', { num: createdOrderId })} ${t('qrMenu.statusPending')}`;
       setPendingOrderId(createdOrderId);
       setBannerDismissed(false);
       const itemCount = Array.isArray(localOrderData?.items)
@@ -436,11 +597,13 @@ const PublicMenuPage = () => {
       setPendingOrderMessage(msg);
       setPendingOrderTotal(localOrderData?.total ?? null);
       setPendingOrderItemCount(itemCount);
-      persistOrder(createdOrderId, msg, null, localOrderData?.total ?? null, null, itemCount);
+      const itemsSnapshot = Array.isArray(localOrderData?.items) ? localOrderData.items : [];
+      setPendingOrderItems(itemsSnapshot);
+      persistOrder(createdOrderId, msg, null, localOrderData?.total ?? null, null, itemCount, itemsSnapshot);
       setLocalOrderData(null);
       persistLocalOrder(null);
       setCart({});
-      showToast('success', 'Commande envoyée ! Le personnel va la traiter.');
+      showToast('success', t('qrMenu.orderSent'));
     } catch (e: any) {
       showToast('error', e?.message || 'Erreur lors de la validation');
     } finally {
@@ -458,43 +621,114 @@ const PublicMenuPage = () => {
         const p = JSON.parse(rawP);
         if (p?.orderId) {
           hasActive = true; setPendingOrderId(p.orderId); setBannerDismissed(false);
-          setActiveOrderId(p.activeOrderId || p.orderId); setPendingOrderMessage(p.message || 'Commande envoyée.');
+          setActiveOrderId(p.activeOrderId || p.orderId);             setPendingOrderMessage(p.message || t('qrMenu.orderSent'));
           setPendingOrderStatus(p.status || null); setPendingOrderTotal(p.total ?? null);
-          setPendingOrderItemCount(p.itemCount ?? 0); setOrderClientValidated(true);
+          setPendingOrderItemCount(p.itemCount ?? 0); 
+          // Enrich from localStorage if possible (will be overwritten by first poll anyway)
+          const restoredItems = Array.isArray(p.items) ? p.items : [];
+          const enrichedRestored = restoredItems.map((it: any) => {
+            const pid = it.product_id || it.productId || it.id;
+            let foundPrice = Number(it.price || it.unit_price || 0);
+            if (!foundPrice && pid && menu.length > 0) {
+              for (const cat of menu) {
+                const match = cat.items.find((m: any) => m.id === pid);
+                if (match) { foundPrice = Number(match.price || 0); break; }
+              }
+            }
+            return { ...it, price: foundPrice };
+          });
+          setPendingOrderItems(enrichedRestored);
+          setOrderClientValidated(true);
         }
       }
       const rawL = localStorage.getItem(`qr_local_order_${token}`);
       if (rawL) {
         const l = JSON.parse(rawL);
-        if (l) { setLocalOrderData(l); if (!hasActive) { setPendingOrderMessage("Commande préparée. Entrez votre code PIN (6 chiffres)."); setPendingOrderTotal(l.total ?? null); } }
+        if (l) { setLocalOrderData(l); if (!hasActive) {             setPendingOrderMessage(t('qrMenu.orderPrepared')); setPendingOrderTotal(l.total ?? null); } }
       }
       const rawC = localStorage.getItem(`qr_customer_${token}`);
       if (rawC) { const c = JSON.parse(rawC); if (c?.phone) { setCustomerPhone(c.phone); setCustomerPin(c.pin || c.phone.replace(/\D/g, '').slice(-6)); } }
     } catch {}
   }, [token]);
 
-  // ─── Poll order status ────────────────────────────────────────────────────
+  // ─── Poll order status (public QR customers) ─────────────────────────────
   useEffect(() => {
     if (!token || !pendingOrderId) return;
+
     let cancelled = false;
     let intervalId: any = null;
+    let consecutiveErrors = 0;
+    const MAX_ERRORS_BEFORE_STOP = 8;
+    const POLL_INTERVAL = 7000; // less aggressive than before (was 3000)
+
     const isFinal = (s: string) => ['paid','served','cancelled','rejected'].includes(String(s));
+
     const fetchStatus = async () => {
       try {
-        const res  = await fetch(apiUrl(`/api/orders/${pendingOrderId}`), { headers: { 'x-user-role': 'waiter' } });
+        // Use the public menu endpoint that reads directly from Supabase for real-time customer visibility
+        const res = await fetch(apiUrl(`/api/menu/order-status/${pendingOrderId}`));
         const data = await res.json().catch(() => ({}));
-        if (cancelled || !res.ok) return;
+
+        if (cancelled) return;
+
+        if (!res.ok) {
+          consecutiveErrors++;
+          if (consecutiveErrors >= MAX_ERRORS_BEFORE_STOP && intervalId) {
+            clearInterval(intervalId);
+            setPendingOrderMessage(t('qrMenu.statusPending') + '. ' + t('qrMenu.error') + ' (rafraîchir la page).');
+          }
+          return;
+        }
+
+        consecutiveErrors = 0; // success → reset
+
         const st = data?.status;
         if (!st) return;
-        setPendingOrderStatus(st); setPendingOrderMessage(buildStatusMessage(st));
+
+        setPendingOrderStatus(st);
+        setPendingOrderMessage(buildStatusMessage(st));
+
         if (data?.total != null) setPendingOrderTotal(Number(data.total));
-        if (Array.isArray(data?.items)) setPendingOrderItemCount(data.items.reduce((s: number, i: any) => s + (Number(i.quantity) || 0), 0));
-        if (isFinal(st) && intervalId) clearInterval(intervalId);
-      } catch {}
+        if (Array.isArray(data?.items)) {
+          setPendingOrderItemCount(data.items.reduce((s: number, i: any) => s + (Number(i.quantity) || 0), 0));
+          // Enrich raw Supabase items (which often lack price) with prices from the loaded menu
+          const enriched = data.items.map((it: any) => {
+            const pid = it.product_id || it.productId || it.id;
+            let foundPrice = Number(it.price || it.unit_price || 0);
+            if (!foundPrice && pid) {
+              // lookup in loaded menu
+              for (const cat of menu) {
+                const match = cat.items.find((m: any) => m.id === pid);
+                if (match) {
+                  foundPrice = Number(match.price || 0);
+                  break;
+                }
+              }
+            }
+            return { ...it, price: foundPrice };
+          });
+          setPendingOrderItems(enriched);
+        }
+
+        if (isFinal(st) && intervalId) {
+          clearInterval(intervalId);
+        }
+      } catch {
+        consecutiveErrors++;
+        if (consecutiveErrors >= MAX_ERRORS_BEFORE_STOP && intervalId) {
+          clearInterval(intervalId);
+            setPendingOrderMessage(t('qrMenu.statusPending') + '. ' + t('qrMenu.error') + ' (rafraîchir la page).');
+        }
+      }
     };
+
     fetchStatus();
-    intervalId = setInterval(fetchStatus, 3000);
-    return () => { cancelled = true; if (intervalId) clearInterval(intervalId); };
+    intervalId = setInterval(fetchStatus, POLL_INTERVAL);
+
+    return () => {
+      cancelled = true;
+      if (intervalId) clearInterval(intervalId);
+    };
   }, [token, pendingOrderId, orderClientValidated]);
 
   // ─── Fetch menu ───────────────────────────────────────────────────────────
@@ -510,8 +744,9 @@ const PublicMenuPage = () => {
         setLoading(true);
         setError(null);
 
-        // Ensure we ALWAYS use the full backend URL from env (no relative fallback in prod)
-        const API_BASE_URL = (import.meta as any).env?.VITE_API_BASE_URL || 'https://reat-olive-api.onrender.com';
+        // Always prefer explicit VITE_API_BASE_URL. In local dev, fall back to localhost backend.
+        const envBase = (import.meta as any).env?.VITE_API_BASE_URL;
+        const API_BASE_URL = envBase || 'http://localhost:3001';
         const targetUrl = `${API_BASE_URL.replace(/\/$/, '')}/api/menu/table/${encodeURIComponent(token)}`;
 
         console.log('[Frontend API URL]', targetUrl);
@@ -548,7 +783,7 @@ const PublicMenuPage = () => {
     <div style={{ minHeight: '100vh', background: T.bg, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 24 }}>
       <div style={{ width: 44, height: 44, border: `1.5px solid ${T.gold}`, borderTopColor: 'transparent', borderRadius: '50%', animation: 'qr-spin 0.9s linear infinite' }} />
       <p style={{ color: T.gold, fontSize: 10, letterSpacing: '0.28em', textTransform: 'uppercase', fontFamily: T.sans, fontWeight: 600 }}>
-        Carte en préparation
+        {t('qrMenu.loading')}
       </p>
     </div>
   );
@@ -575,6 +810,23 @@ const PublicMenuPage = () => {
   return (
     <div style={{ minHeight: '100vh', background: T.bg, color: T.text, fontFamily: T.sans }}>
 
+      {/* Language switcher for public QR Menu (default English) */}
+      <div style={{ 
+        position: 'fixed', top: 8, right: 12, zIndex: 100, 
+        display: 'flex', gap: 4, background: 'rgba(0,0,0,0.4)', 
+        borderRadius: 999, padding: 2, backdropFilter: 'blur(8px)'
+      }}>
+        <button onClick={() => changeQrLang('en')} style={{ padding: '2px 8px', fontSize: 10, borderRadius: 999, border: 'none', background: qrLang === 'en' ? T.gold : 'transparent', color: qrLang === 'en' ? T.bg : T.text2, fontWeight: 600, cursor: 'pointer' }}>
+          {t('qrMenu.langEn')}
+        </button>
+        <button onClick={() => changeQrLang('fr')} style={{ padding: '2px 8px', fontSize: 10, borderRadius: 999, border: 'none', background: qrLang === 'fr' ? T.gold : 'transparent', color: qrLang === 'fr' ? T.bg : T.text2, fontWeight: 600, cursor: 'pointer' }}>
+          {t('qrMenu.langFr')}
+        </button>
+        <button onClick={() => changeQrLang('pt')} style={{ padding: '2px 8px', fontSize: 10, borderRadius: 999, border: 'none', background: qrLang === 'pt' ? T.gold : 'transparent', color: qrLang === 'pt' ? T.bg : T.text2, fontWeight: 600, cursor: 'pointer' }}>
+          {t('qrMenu.langPt')}
+        </button>
+      </div>
+
       {/* ══ STICKY BANNER ══════════════════════════════════════════════════ */}
       {showBanner && (
         <div style={{
@@ -582,28 +834,124 @@ const PublicMenuPage = () => {
           background: 'rgba(6,15,10,0.97)', borderBottom: `1px solid ${T.goldBorder}`,
           padding: '14px 16px', backdropFilter: 'blur(16px)',
         }}>
-          {/* Order ref */}
+          {/* Order ref - clean, no repetition */}
           {pendingOrderId && (
-            <div style={{ fontSize: 10, letterSpacing: '0.18em', textTransform: 'uppercase', color: T.gold, fontWeight: 600, marginBottom: 4 }}>
-              Commande #{pendingOrderId}
+            <div style={{ fontSize: 11, letterSpacing: '0.18em', textTransform: 'uppercase', color: T.gold, fontWeight: 700, marginBottom: 2 }}>
+              {t('qrMenu.orderNumber', { num: pendingOrderId })}
             </div>
           )}
-          {/* Message */}
-          <div style={{ fontSize: 13, fontWeight: 500, color: T.text, lineHeight: 1.45, marginBottom: 8 }}>
-            {pendingOrderMessage}
+          {/* Status message - simplified, no tautology */}
+          <div style={{ fontSize: 12, fontWeight: 500, color: T.text, lineHeight: 1.4, marginBottom: 6 }}>
+            {pendingOrderStatus 
+              ? t(`qrMenu.status${pendingOrderStatus.charAt(0).toUpperCase() + pendingOrderStatus.slice(1)}`)
+              : (pendingOrderMessage || t('qrMenu.statusPending'))
+            }
           </div>
 
-          {/* Status + total chips */}
-          {!localOrderData && pendingOrderId && (
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 6 }}>
-              {pendingOrderStatus && <StatusChip status={pendingOrderStatus} />}
+          {/* Beautiful Order Status Tracker + Items toggle */}
+          {!localOrderData && pendingOrderId && pendingOrderStatus && (
+            <div style={{ marginBottom: 10 }}>
+              <OrderStatusTracker status={pendingOrderStatus} />
+
               {pendingOrderItemCount > 0 && pendingOrderTotal != null && (
-                <span style={{ fontFamily: T.mono, fontSize: 11, color: T.gold, letterSpacing: '0.04em' }}>
-                  {pendingOrderItemCount} article{pendingOrderItemCount !== 1 ? 's' : ''} · {pendingOrderTotal.toFixed(0)} ZMW
-                </span>
+                <div style={{ 
+                  display: 'flex', 
+                  justifyContent: 'space-between', 
+                  alignItems: 'center', 
+                  marginTop: 10,
+                  fontSize: 12,
+                  color: T.text2,
+                  gap: 12
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span>{t('qrMenu.itemsCount', { 
+                      count: pendingOrderItemCount, 
+                      plural: pendingOrderItemCount > 1 ? 's' : '' 
+                    })}</span>
+                    <span style={{ fontFamily: T.mono, color: T.gold, fontWeight: 600 }}>
+                      {pendingOrderTotal.toFixed(0)} {t('qrMenu.currency')}
+                    </span>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    {/* Toggle Ma commande / Cacher commande */}
+                    <button 
+                      onClick={() => setShowOrderItems(!showOrderItems)} 
+                      style={{ 
+                        ...btnLink, 
+                        fontSize: 11, 
+                        padding: '4px 10px',
+                        background: showOrderItems ? 'rgba(212,175,55,0.15)' : 'transparent',
+                        borderRadius: 6,
+                        border: showOrderItems ? `1px solid ${T.goldBorder}` : 'none'
+                      }}
+                    >
+                      {showOrderItems ? t('qrMenu.hideOrder') : t('qrMenu.myOrder')}
+                    </button>
+
+                    <button 
+                      onClick={() => setBannerDismissed(true)} 
+                      style={{ ...btnLink, fontSize: 10, opacity: 0.7 }}
+                    >
+                      {t('qrMenu.hide')}
+                    </button>
+                  </div>
+                </div>
               )}
-              {pendingOrderItemCount > 0 && (
-                <button onClick={() => setBannerDismissed(true)} style={{ ...btnLink, fontSize: 11 }}>OK</button>
+
+              {/* Improved items list */}
+              {showOrderItems && (
+                pendingOrderItems.length > 0 ? (
+                  <div style={{ 
+                    marginTop: 8, 
+                    padding: '10px 14px', 
+                    background: 'rgba(0,0,0,0.35)', 
+                    borderRadius: 10,
+                    fontSize: 12,
+                    color: T.text,
+                    border: `1px solid ${T.goldBorder}`
+                  }}>
+                    {pendingOrderItems.map((it: any, idx: number) => {
+                      const price = Number(it.price || it.unit_price || 0);
+                      const qty = Number(it.quantity || 1);
+                      return (
+                         <div key={idx} style={{ 
+                           display: 'flex', 
+                           justifyContent: 'space-between', 
+                           padding: '4px 0',
+                           borderBottom: idx < pendingOrderItems.length - 1 ? `1px solid rgba(255,255,255,0.06)` : 'none',
+                           fontSize: 12
+                         }}>
+                           <div>
+                             <span>{qty} × {it.name || t('qrMenu.outOfStock')}</span>
+                             <div style={{ fontSize: 10, color: T.text2, marginTop: 1 }}>
+                               {price.toFixed(0)} {t('qrMenu.currency')} × {qty}
+                             </div>
+                           </div>
+                           <span style={{ fontFamily: T.mono, color: T.gold, fontWeight: 600, alignSelf: 'center' }}>
+                             {(price * qty).toFixed(0)} {t('qrMenu.currency')}
+                           </span>
+                         </div>
+                      );
+                    })}
+                    <div style={{ 
+                      marginTop: 8, 
+                      paddingTop: 6, 
+                      borderTop: `1px solid ${T.goldBorder}`, 
+                      fontWeight: 700, 
+                      display: 'flex', 
+                      justifyContent: 'space-between',
+                      color: T.gold
+                    }}>
+                      <span>{t('qrMenu.total')}</span>
+                      <span style={{ fontFamily: T.mono }}>{pendingOrderTotal?.toFixed(0)} {t('qrMenu.currency')}</span>
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ marginTop: 6, fontSize: 11, color: T.text2, fontStyle: 'italic' }}>
+                    Chargement des détails de la commande...
+                  </div>
+                )
               )}
             </div>
           )}
@@ -612,7 +960,7 @@ const PublicMenuPage = () => {
           {orderClientValidated && !localOrderData && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: T.green, fontWeight: 500, marginBottom: 8 }}>
               <span style={{ width: 6, height: 6, borderRadius: '50%', background: T.green, display: 'inline-block' }} />
-              Validée par le client — en attente du personnel
+              {t('qrMenu.clientValidated')}
             </div>
           )}
 
@@ -621,18 +969,18 @@ const PublicMenuPage = () => {
             <>
               <div style={{ borderTop: `1px solid ${T.goldBorder}`, marginTop: 8, paddingTop: 10 }}>
                 <div style={{ fontSize: 10, letterSpacing: '0.14em', textTransform: 'uppercase', color: T.gold, fontWeight: 700, marginBottom: 8 }}>
-                  {showAccountCreation ? 'Créer / récupérer votre compte' : 'Valider avec votre code PIN'}
+                   {showAccountCreation ? t('qrMenu.createAccount') : t('qrMenu.enterPin')}
                 </div>
 
                 {showAccountCreation ? (
                   <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                     <input
-                      type="tel" placeholder="Votre téléphone" value={phoneInput}
+                      type="tel" placeholder={t('qrMenu.phonePlaceholder')} value={phoneInput}
                       onChange={e => setPhoneInput(e.target.value)} maxLength={14}
                       style={{ flex: 1, minWidth: 140, padding: '9px 12px', borderRadius: 10, border: `1px solid ${T.goldBorder}`, background: T.bg2, color: T.text, fontSize: 13, fontFamily: T.mono, outline: 'none' }}
                     />
                     <button onClick={async () => { await associatePhone(phoneInput); setPhoneInput(''); }} style={btnGoldSolid}>Créer compte</button>
-                    <button onClick={() => setShowAccountCreation(false)} style={btnLink}>J'ai un PIN</button>
+                    <button onClick={() => setShowAccountCreation(false)} style={btnLink}>{t('qrMenu.iHavePin')}</button>
                   </div>
                 ) : (
                    <>
@@ -646,7 +994,7 @@ const PublicMenuPage = () => {
                          marginBottom: 10,
                          fontSize: 12 
                        }}>
-                         <div style={{ fontWeight: 600, color: T.gold, marginBottom: 6 }}>Votre commande :</div>
+                          <div style={{ fontWeight: 600, color: T.gold, marginBottom: 6 }}>{t('qrMenu.yourOrder')} :</div>
                          {localOrderData.items.map((it: any, idx: number) => (
                            <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
                              <span>{it.quantity} × {it.name || `Article #${it.product_id}`}</span>
@@ -687,7 +1035,7 @@ const PublicMenuPage = () => {
                             setValidationPinInput('');
                             setPinAttempts(0);
                             setShowAccountCreation(false);
-                            showToast('info', 'Commande annulée');
+                            showToast('info', t('qrMenu.statusCancelled'));
                           }}
                           style={{ ...btnGhost, padding: '9px 14px', fontSize: 12 }}
                         >
@@ -696,7 +1044,7 @@ const PublicMenuPage = () => {
                       </div>
                     {pinAttempts >= 3 && (
                       <div style={{ marginTop: 6 }}>
-                        <button onClick={() => setShowAccountCreation(true)} style={btnLink}>Pas de PIN ? Créer un compte</button>
+                        <button onClick={() => setShowAccountCreation(true)} style={btnLink}>{t('qrMenu.createAccount')}</button>
                       </div>
                     )}
                   </>
@@ -714,9 +1062,9 @@ const PublicMenuPage = () => {
                 setValidationPinInput(''); setLocalOrderData(null); setShowAccountCreation(false);
                 setOrderNotes(''); persistOrder(null, null, null, null);
               }}
-              style={{ position: 'absolute', top: 10, right: 14, ...btnGhost, padding: '6px 12px', fontSize: 11 }}
+              style={{ position: 'absolute', top: 55, right: 14, ...btnGhost, padding: '6px 12px', fontSize: 11, zIndex: 10 }}
             >
-              Fermer
+              {t('qrMenu.close')}
             </button>
           )}
         </div>
@@ -765,7 +1113,7 @@ const PublicMenuPage = () => {
                   <span style={{ fontFamily: T.mono, fontSize: 12, color: T.gold }}>•••{customerPhone.slice(-4)}</span>
                   <span style={{ fontSize: 9, color: T.text3 }}>PIN {customerPin}</span>
                   <button onClick={() => { setCustomerPhone(''); setCustomerPin(''); persistCustomer('', ''); }}
-                    style={{ background: 'transparent', border: 'none', color: T.text3, fontSize: 16, lineHeight: 1, cursor: 'pointer', padding: '0 2px' }} aria-label="Changer de numéro">×</button>
+                    style={{ background: 'transparent', border: 'none', color: T.text3, fontSize: 16, lineHeight: 1, cursor: 'pointer', padding: '0 2px' }} aria-label={t('qrMenu.changePhone')}>×</button>
                 </div>
               )}
             </div>
@@ -775,7 +1123,7 @@ const PublicMenuPage = () => {
           {showPhoneForm && !customerPhone && (
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', background: T.bg3, border: `1px solid ${T.goldBorder}`, borderRadius: 14, padding: '10px 14px', marginBottom: 14 }}>
               <input
-                type="tel" placeholder="Votre téléphone (ex: 0612345678)"
+                 type="tel" placeholder={t('qrMenu.phonePlaceholder')}
                 value={phoneInput} onChange={e => setPhoneInput(e.target.value)} maxLength={14}
                 onKeyDown={e => { if (e.key === 'Enter') associatePhone(phoneInput); }}
                 style={{ flex: 1, minWidth: 150, background: T.bg2, border: `1px solid rgba(255,255,255,0.08)`, borderRadius: 10, padding: '9px 12px', color: T.text, fontSize: 13, fontFamily: T.mono, outline: 'none' }}
@@ -820,7 +1168,9 @@ const PublicMenuPage = () => {
             <div style={{ display: 'flex', alignItems: 'flex-end', gap: 12, marginBottom: 14, paddingBottom: 10, borderBottom: `1px solid rgba(200,168,75,0.18)` }}>
               <div>
                 <div style={{ fontFamily: T.serif, fontSize: 30, fontWeight: 600, fontStyle: 'italic', color: T.gold, letterSpacing: '0.02em', lineHeight: 1 }}>{category.name}</div>
-                <div style={{ fontSize: 9, letterSpacing: '0.18em', textTransform: 'uppercase', color: T.text3, marginTop: 5 }}>{category.items.length} article{category.items.length !== 1 ? 's' : ''}</div>
+                <div style={{ fontSize: 9, letterSpacing: '0.18em', textTransform: 'uppercase', color: T.text3, marginTop: 5 }}>
+                   {t('qrMenu.itemsCount', { count: category.items.length, plural: category.items.length > 1 ? 's' : '' })}
+                </div>
               </div>
               <div style={{ flex: 1, height: 1, background: 'rgba(200,168,75,0.1)', marginBottom: 5 }} />
             </div>
@@ -860,7 +1210,7 @@ const PublicMenuPage = () => {
                     <button className="qr-add-btn"
                       onClick={() => addToCart(item)} disabled={!item.in_stock}
                       style={{ padding: '8px 14px', borderRadius: 10, border: `1px solid ${item.in_stock ? T.goldBorder : 'rgba(255,255,255,0.08)'}`, background: item.in_stock ? 'rgba(200,168,75,0.09)' : 'rgba(255,255,255,0.02)', color: item.in_stock ? T.gold : T.text3, fontSize: 11, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', cursor: item.in_stock ? 'pointer' : 'not-allowed', fontFamily: T.sans, minHeight: 36, touchAction: 'manipulation' }}>
-                      + Ajouter
+                       + {t('qrMenu.addToCart')}
                     </button>
                     <StockBadge item={item} onAlert={() => alertStock(item, category.name)} />
                   </div>
@@ -893,10 +1243,10 @@ const PublicMenuPage = () => {
                 {/* Header */}
                 <div style={{ padding: '8px 18px 14px', borderBottom: `1px solid ${T.goldBorder}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div>
-                    <div style={{ fontFamily: T.serif, fontSize: 20, fontWeight: 600, color: T.gold }}>Votre panier</div>
+                     <div style={{ fontFamily: T.serif, fontSize: 20, fontWeight: 600, color: T.gold }}>{t('qrMenu.cartTitle')}</div>
                     <div style={{ fontSize: 10, color: T.text3, letterSpacing: '0.10em', marginTop: 2 }}>
-                      {cartQty} article{cartQty !== 1 ? 's' : ''} · Table {table.table_number}
-                      {activeOrderId ? ` · Commande en cours #${activeOrderId}` : ''}
+                        {t('qrMenu.itemsCount', { count: cartQty, plural: cartQty > 1 ? 's' : '' })} · Table {table.table_number}
+                      {activeOrderId ? ` · ${t('qrMenu.orderInProgress')} #${activeOrderId}` : ''}
                     </div>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -938,10 +1288,10 @@ const PublicMenuPage = () => {
 
                 {/* Notes */}
                 <div style={{ padding: '0 18px 12px' }}>
-                  <div style={{ fontSize: 10, letterSpacing: '0.14em', textTransform: 'uppercase', color: T.gold, fontWeight: 700, marginBottom: 6 }}>Notes / Instructions spéciales</div>
+                   <div style={{ fontSize: 10, letterSpacing: '0.14em', textTransform: 'uppercase', color: T.gold, fontWeight: 700, marginBottom: 6 }}>{t('qrMenu.specialInstructions')}</div>
                   <textarea
                     value={orderNotes} onChange={e => setOrderNotes(e.target.value)}
-                    placeholder="Allergies, préférences, instructions cuisine..." rows={2}
+                           placeholder={t('qrMenu.notesPlaceholder2')} rows={2}
                     style={{ width: '100%', background: T.bg2, border: `1px solid ${T.goldBorder}`, borderRadius: 10, padding: '9px 11px', color: T.text, fontSize: 12, resize: 'none', fontFamily: T.sans, outline: 'none', lineHeight: 1.5 }}
                   />
                 </div>
@@ -955,14 +1305,14 @@ const PublicMenuPage = () => {
                     <span>Frais de service (10%)</span><span>{Math.round(cartTotal * 0.10)} {currency}</span>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 14 }}>
-                    <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.10em', color: T.text2 }}>Total à payer</span>
+                    <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.10em', color: T.text2 }}>{t('qrMenu.total')}</span>
                     <span style={{ fontFamily: T.mono, fontSize: 20, fontWeight: 700, color: T.gold2 }}>{Math.round(cartTotal * 1.10).toFixed(0)} {currency}</span>
                   </div>
                   <button className="qr-checkout-btn" onClick={() => { setIsCartOpen(false); checkout(); }}
                     style={{ width: '100%', padding: '14px', borderRadius: 13, background: T.gold, color: T.bg, border: 'none', fontSize: 13, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', cursor: 'pointer', fontFamily: T.sans }}>
-                    Envoyer commande
+                    {t('qrMenu.checkoutBtn')}
                   </button>
-                  <div style={{ textAlign: 'center', marginTop: 8, fontSize: 11, color: T.text3 }}>Vous serez invité à saisir votre code PIN</div>
+                   <div style={{ textAlign: 'center', marginTop: 8, fontSize: 11, color: T.text3 }}>{t('qrMenu.enterPin')}</div>
                 </div>
               </div>
             </div>
@@ -973,7 +1323,7 @@ const PublicMenuPage = () => {
       {/* ══ FOOTER ══════════════════════════════════════════════════════════ */}
       <div style={{ textAlign: 'center', padding: '20px 16px 50px', borderTop: `1px solid rgba(255,255,255,0.05)`, marginTop: 8 }}>
         <div style={{ fontSize: 13, letterSpacing: '0.4em', color: T.text3, marginBottom: 7 }}>— ✦ —</div>
-        <p style={{ fontSize: 10, letterSpacing: '0.16em', textTransform: 'uppercase', color: T.text3 }}>Carte générale · Mise à jour en temps réel</p>
+        <p style={{ fontSize: 10, letterSpacing: '0.16em', textTransform: 'uppercase', color: T.text3 }}>{t('qrMenu.menuFooter')}</p>
       </div>
 
       {/* ══ Aesthetic Toast Notifications (QR Customer) ═══════════════════════ */}

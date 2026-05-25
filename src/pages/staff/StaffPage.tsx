@@ -35,12 +35,15 @@ const StaffPage = () => {
 
   const fetchData = async () => {
     try {
-      const [users, tables] = await Promise.all([
+      const [usersRes, tables] = await Promise.all([
         api.users.getAll(currentUser?.role),
-        api.tables.getAll(currentUser?.role) // admin only - gets all tables
+        api.tables.getAll(undefined, currentUser?.role)
       ]);
 
-      const waitersList = (users as any[]).filter((u: any) => u.role === 'waiter');
+      // Backend returns either raw array or { users: [...] }
+      const usersArray = Array.isArray(usersRes) ? usersRes : (usersRes as any)?.users || [];
+      const waitersList = usersArray.filter((u: any) => u.role === 'waiter');
+
       setWaiters(waitersList);
       setAllTables(tables as Table[]);
     } catch (err) {

@@ -239,7 +239,26 @@ const OrdersPage = () => {
       }
 
       case 'confirmed':
-        // After validate: only "Voir" to open details + print invoice
+        // QR/table orders after validation: offer clear progression so customers see the tracker advance
+        actions.push({
+          label: t('orders.actions.startPrep') || 'Cuisine',
+          action: () => updateOrderStatus(order.id, 'preparing'),
+          icon: ChefHat,
+          style: { background: 'var(--amber-dim)', color: 'var(--amber)', border: '1px solid rgba(245,158,11,0.2)' }
+        });
+        actions.push({
+          label: t('orders.actions.markReady') || 'Prête',
+          action: () => updateOrderStatus(order.id, 'ready'),
+          icon: Package,
+          style: { background: 'var(--purple-dim)', color: 'var(--purple)', border: '1px solid rgba(167,139,250,0.2)' }
+        });
+        actions.push({
+          label: t('orders.actions.serve') || 'Servir',
+          action: () => updateOrderStatus(order.id, 'served'),
+          icon: UtensilsCrossed,
+          style: { background: 'var(--green-dim)', color: 'var(--green)', border: '1px solid rgba(16,185,129,0.2)' }
+        });
+        // Keep the detailed view + print
         actions.push({
           label: t('orders.actions.view') || 'Voir',
           action: async () => {
@@ -276,7 +295,7 @@ const OrdersPage = () => {
       case 'served':
         actions.push({
           label: t('orders.actions.cashout'),
-          action: () => navigate(`/pos?tableId=${order.table_id}`),
+          action: () => navigate(`/pos?tableId=${order.table_id}&orderId=${order.id}`),
           icon: CreditCard,
           style: { background: 'var(--gold-dim)', color: 'var(--gold)', border: '1px solid rgba(212,175,55,0.2)' }
         });
@@ -478,6 +497,12 @@ const OrdersPage = () => {
                     <div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
                         <span className="mono" style={{ fontSize: 18, fontWeight: 600, color: 'var(--text-1)' }}>#{order.id}</span>
+                        {(order.source === 'qr' || order.remote_id) && (
+                          <span style={{
+                            fontSize: 9, fontWeight: 800, padding: '1px 6px', borderRadius: 6,
+                            background: 'rgba(59,130,246,0.15)', color: 'var(--blue)', border: '1px solid rgba(59,130,246,0.3)'
+                          }}>QR</span>
+                        )}
                          <div className="status-badge" style={{ background: status.dim, color: status.color, border: `1px solid ${status.color}33` }}>
                            {status.icon} {status.label}
                          </div>
@@ -602,7 +627,9 @@ const OrdersPage = () => {
                       <span className="mono" style={{ background: 'var(--blue-dim)', color: 'var(--blue)', padding: '1px 7px', borderRadius: 4, fontSize: 11 }}>{it.quantity}x</span>
                       <span style={{ color: 'var(--text-1)', fontSize: 14 }}>{it.name}</span>
                     </div>
-                    <span className="mono" style={{ color: 'var(--text-2)', fontSize: 13 }}>{formatPrice((it.price || 0) * (it.quantity || 0), currency, lang)}</span>
+                    <span className="mono" style={{ color: 'var(--text-2)', fontSize: 13 }}>
+                      {it.quantity} × {formatPrice(it.price || 0, currency, lang)} = {formatPrice((it.price || 0) * (it.quantity || 0), currency, lang)}
+                    </span>
                   </div>
                 ))
               ) : (
@@ -632,6 +659,13 @@ const OrdersPage = () => {
                     if (!user || !detailsModalOrderId || isCheckoutProcessing) return;
                     setIsCheckoutProcessing(true);
                     try {
+                      // Advance to 'served' first (if not already final) so the customer QR tracker
+                      // visibly progresses to "Servie" when staff prints/delivers the order.
+                      const currentStatus = modalOrder?.status || 'confirmed';
+                      if (!['served', 'paid', 'cancelled', 'rejected'].includes(currentStatus)) {
+                        await updateOrderStatus(detailsModalOrderId, 'served');
+                      }
+
                       const checkoutRes: any = await api.sales.checkout(
                         {
                           order_id: detailsModalOrderId,

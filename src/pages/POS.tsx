@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useEffect } from 'react';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import { FloorTablesSidebar } from '../features/pos/components/FloorTablesSidebar';
 import { ProductsGrid } from '../features/pos/components/ProductsGrid';
 import { OrderSummary } from '../features/pos/components/OrderSummary';
@@ -25,18 +26,44 @@ const { colors, typography } = EnterpriseTokens;
  const POS: React.FC = () => {
    const { t, lang } = useI18n();
    const { currency } = useSettingsStore();
-  const {
-    selectedTableId,
-    saveOrder,
-    checkout,
-    cart,
-    error: posError,
-    setError,
-  } = usePOSStore();
+   const {
+     selectedTableId,
+     saveOrder,
+     checkout,
+     cart,
+     error: posError,
+     setError,
+     selectTable,
+     loadOrderForTable,
+     clearCart,
+   } = usePOSStore();
+
+  const navigate = useNavigate();
 
   const { error: tableError } = useTableStore();
-  const [partialWarning, setPartialWarning] = React.useState<string | null>(null);
+   const [partialWarning, setPartialWarning] = React.useState<string | null>(null);
   const [partialBlocks, setPartialBlocks] = React.useState<Array<{ name: string; quantity: number }>>([]);
+
+  // Auto-select table + specific order (when coming from "Encaisser" on a served QR order)
+  // This guarantees the cart is filled with the exact items (normalized for remote orders).
+  const [searchParams] = useSearchParams();
+  useEffect(() => {
+    const tableIdParam = searchParams.get('tableId');
+    const orderIdParam = searchParams.get('orderId');
+    if (tableIdParam) {
+      const tableId = Number(tableIdParam);
+      const orderId = orderIdParam ? Number(orderIdParam) : undefined;
+      if (!Number.isNaN(tableId) && tableId > 0) {
+        if (selectedTableId !== tableId) {
+          selectTable(tableId);
+        }
+        // If we have an explicit orderId (from cashout link), load it directly for perfect item population
+        if (orderId && !Number.isNaN(orderId)) {
+          loadOrderForTable(tableId, orderId);
+        }
+      }
+    }
+  }, [searchParams, selectTable, selectedTableId]);
 
   const handleSaveOrder = async () => {
     await saveOrder();
@@ -70,6 +97,14 @@ const { colors, typography } = EnterpriseTokens;
           }
         } else {
           console.warn('[POS] No receipt data to print');
+        }
+
+        // Post-print behavior ONLY when we arrived via the specific cashout link from Orders page
+        // (?tableId=...&orderId=...). Normal POS usage stays on the POS after checkout.
+        const hadCashoutLink = searchParams.get('tableId') && searchParams.get('orderId');
+        if (hadCashoutLink) {
+          clearCart();
+          navigate('/orders');
         }
       } else {
         setError(result.error || t('pos.invalidPayment'));

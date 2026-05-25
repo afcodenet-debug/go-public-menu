@@ -1,5 +1,6 @@
 import db from '../db/database';
 import { notifyOrderCheckout, loadRawSettings } from '../services/notification.service';
+import { createClient } from '@supabase/supabase-js';
 
 export interface OrderItem {
   productId: number;
@@ -26,8 +27,25 @@ export interface OrderData {
 }
 
 export class OrderService {
-  private static getItemsForOrder(orderId: number, fallbackJson?: string): OrderItem[] {
+  private static getItemsForOrder(orderId: number, fallbackJson?: string, isRemote: boolean = false): OrderItem[] {
     try {
+      // For remote QR orders (pulled from Supabase), the pulled JSON snapshot is the source of truth.
+      // The public menu only sends {product_id, quantity, name} — we enrich with current local price.
+      if (isRemote && fallbackJson) {
+        const rawItems = JSON.parse(fallbackJson || '[]') as any[];
+        return rawItems.map((it: any) => {
+          const prod = db.prepare('SELECT selling_price FROM products WHERE id = ?').get(it.product_id || it.productId) as any;
+          const price = Number(prod?.selling_price ?? it.price ?? it.unit_price ?? 0);
+          return {
+            productId: it.product_id || it.productId,
+            name: it.name || '',
+            price,
+            quantity: Number(it.quantity) || 0,
+            notes: it.notes ?? undefined
+          };
+        });
+      }
+
       const items = db.prepare(`
         SELECT
           oi.product_id AS productId,
@@ -134,7 +152,7 @@ export class OrderService {
       const orders = db.prepare(query).all(...queryParams) as any[];
       return orders.map(order => ({
         ...order,
-        items: this.getItemsForOrder(order.id, order.items)
+        items: this.getItemsForOrder(order.id, order.items, !!order.remote_id)
       }));
     } catch (error: any) {
       console.error('[OrderService] Error fetching orders (real error):', error);
@@ -162,7 +180,7 @@ export class OrderService {
       if (order) {
         return {
           ...order,
-          items: this.getItemsForOrder(order.id, order.items)
+          items: this.getItemsForOrder(order.id, order.items, !!order.remote_id)
         };
       }
       return null;
@@ -382,6 +400,50 @@ export class OrderService {
           LEFT JOIN users u ON o.waiter_id = u.id
           WHERE o.id = ?
         `).get(id) as any;
+
+        // === Push status update back to Supabase for remote QR orders ===
+        // This allows the customer (on the public QR menu) to see the order evolution
+        // (pending → confirmed → preparing → ready → served, etc.)
+        // === Push status back to Supabase for remote QR orders ===
+        if (updatedOrder && updatedOrder.remote_id) {
+          const remoteId = updatedOrder.remote_id;
+          console.log(`[Sync] Attempting to push status "${status}" for local order #${id} (remote_id=${remoteId})`);
+
+          setImmediate(async () => {
+            try {
+              const supabaseUrl = process.env.SUPABASE_URL;
+              const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+              if (!supabaseUrl || !supabaseKey) {
+                console.error('[Sync] Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY — cannot push status');
+                return;
+              }
+
+              const supabase = createClient(supabaseUrl, supabaseKey, {
+                auth: { persistSession: false }
+              });
+
+              const { error, data } = await supabase
+                .from('orders')
+                .update({ 
+                  status, 
+                  updated_at: new Date().toISOString() 
+                })
+                .eq('id', remoteId)
+                .select();
+
+              if (error) {
+                console.error(`[Sync] FAILED to push status to Supabase for remote_id=${remoteId}:`, error.message);
+              } else {
+                console.log(`[Sync] ✓ SUCCESS — Pushed status "${status}" to Supabase for remote_id=${remoteId}`, data);
+              }
+            } catch (e: any) {
+              console.error(`[Sync] Exception while pushing status for remote_id=${remoteId}:`, e?.message || e);
+            }
+          });
+        } else {
+          console.log(`[Sync] Order #${id} has no remote_id — skipping Supabase push (local order only)`);
+        }
 
         const result = {
           ...updatedOrder,

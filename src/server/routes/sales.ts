@@ -47,25 +47,44 @@ router.post('/checkout', requirePermission('PROCESS_PAYMENTS'), (req, res) => {
       if (!order) throw new Error('Order not found');
       if (order.status === 'paid') throw new Error('Order already finalized');
 
+      const isRemoteQrOrder = !!order.remote_id;   // orders pulled from Supabase via the QR pull worker
+
       let items: any[] = Array.isArray(requestItems) ? requestItems : [];
 
       if (items.length === 0) {
-        items = db.prepare(`
-          SELECT
-            oi.product_id AS productId,
-            p.name AS name,
-            oi.quantity,
-            oi.unit_price AS price,
-            oi.total_price,
-            oi.notes,
-            p.buying_price
-          FROM order_items oi
-          JOIN products p ON oi.product_id = p.id
-          WHERE oi.order_id = ?
-        `).all(order_id) as any[];
+        if (isRemoteQrOrder) {
+          // For remote QR orders, lock to the exact snapshot that was pulled from Supabase.
+          // Public menu only sends {product_id, quantity, name} — normalize to what the rest of the code expects.
+          const raw = JSON.parse(order.items || '[]');
+          items = raw.map((it: any) => {
+            const pid = it.product_id || it.productId;
+            const prod = db.prepare('SELECT selling_price FROM products WHERE id = ?').get(pid) as any;
+            return {
+              productId: pid,
+              quantity: Number(it.quantity) || 0,
+              name: it.name || '',
+              price: Number(it.price || it.unit_price || prod?.selling_price || 0),
+              notes: it.notes || null
+            };
+          });
+        } else {
+          items = db.prepare(`
+            SELECT
+              oi.product_id AS productId,
+              p.name AS name,
+              oi.quantity,
+              oi.unit_price AS price,
+              oi.total_price,
+              oi.notes,
+              p.buying_price
+            FROM order_items oi
+            JOIN products p ON oi.product_id = p.id
+            WHERE oi.order_id = ?
+          `).all(order_id) as any[];
 
-        if (items.length === 0) {
-          items = JSON.parse(order.items || '[]');
+          if (items.length === 0) {
+            items = JSON.parse(order.items || '[]');
+          }
         }
       }
 
@@ -84,6 +103,13 @@ router.post('/checkout', requirePermission('PROCESS_PAYMENTS'), (req, res) => {
         const available = Number(product.stock_quantity ?? 0);
         const requested = Number(item.quantity);
 
+        if (isRemoteQrOrder) {
+          // For orders that came from the public QR menu, we allow the sale
+          // even if local stock is insufficient (the "sale" happened on the customer side).
+          fulfilledItems.push({ ...item, quantity: requested, product });
+          continue;
+        }
+
         if (available <= 0) {
           blockedItems.push({ ...item, quantity: requested });
           continue;
@@ -98,7 +124,8 @@ router.post('/checkout', requirePermission('PROCESS_PAYMENTS'), (req, res) => {
       }
 
       const fulfilledSubtotal = fulfilledItems.reduce((sum, item) => sum + Number(item.price) * Number(item.quantity), 0);
-      if (fulfilledSubtotal <= 0) {
+
+      if (fulfilledSubtotal <= 0 && !isRemoteQrOrder) {
         const blockedNames = blockedItems.map(item => item.name).join(', ');
         throw new Error(`Insufficient stock for ${blockedNames}`);
       }
@@ -157,24 +184,28 @@ router.post('/checkout', requirePermission('PROCESS_PAYMENTS'), (req, res) => {
 
         itemStmt.run(saleId, item.productId, item.quantity, item.price, item.price * item.quantity);
 
-        db.prepare('UPDATE products SET stock_quantity = stock_quantity - ? WHERE id = ?').run(item.quantity, item.productId);
+        // For orders pulled from the public QR menu (remote_id present), we do NOT touch local stock.
+        // The "sale" conceptually happened on the customer-facing side.
+        if (!isRemoteQrOrder) {
+          db.prepare('UPDATE products SET stock_quantity = stock_quantity - ? WHERE id = ?').run(item.quantity, item.productId);
 
-        try {
-          movementStmt.run(
-            item.productId,
-            'sale',
-            quantityBefore,
-            quantityChanged,
-            quantityAfter,
-            unitCost,
-            totalValue,
-            `Sale ${invoiceNumber}`,
-            user_id || null,
-            'sale',
-            saleId
-          );
-        } catch (movementError) {
-          console.error('[Sales] Failed to record inventory movement:', movementError);
+          try {
+            movementStmt.run(
+              item.productId,
+              'sale',
+              quantityBefore,
+              quantityChanged,
+              quantityAfter,
+              unitCost,
+              totalValue,
+              `Sale ${invoiceNumber}`,
+              user_id || null,
+              'sale',
+              saleId
+            );
+          } catch (movementError) {
+            console.error('[Sales] Failed to record inventory movement:', movementError);
+          }
         }
       }
 

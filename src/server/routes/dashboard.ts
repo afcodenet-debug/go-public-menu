@@ -14,6 +14,29 @@ const router = express.Router();
  * - topProducts: best sellers today
  */
 router.get('/summary', (req, res) => {
+  // Cloud mode guard: SQLite may be disabled (db === null)
+  if (!db) {
+    console.warn('[Dashboard] SQLite disabled (db is null). Returning empty dashboard summary');
+    return res.status(200).json({
+      kpis: {
+        revenueToday: 0,
+        revenueYesterday: 0,
+        transactionsToday: 0,
+        activeTables: 0,
+        openOrders: 0,
+        lowStockItems: 0,
+        staffOnDuty: 0
+      },
+      hourlySales: Array.from({ length: 24 }, (_, h) => {
+        const hh = h.toString().padStart(2, '0');
+        return { hour: `${hh}h`, amount: 0 };
+      }),
+      recentActivity: [],
+      topProducts: [],
+      lastUpdated: new Date().toISOString()
+    });
+  }
+
   try {
     const today = new Date().toISOString().split('T')[0];
     const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
@@ -195,7 +218,24 @@ router.get('/summary', (req, res) => {
     });
   } catch (error: any) {
     console.error('[Dashboard] summary error:', error);
-    res.status(500).json({ error: 'Failed to load dashboard summary' });
+    return res.status(200).json({
+      kpis: {
+        revenueToday: 0,
+        revenueYesterday: 0,
+        transactionsToday: 0,
+        activeTables: 0,
+        openOrders: 0,
+        lowStockItems: 0,
+        staffOnDuty: 0
+      },
+      hourlySales: Array.from({ length: 24 }, (_, h) => {
+        const hh = h.toString().padStart(2, '0');
+        return { hour: `${hh}h`, amount: 0 };
+      }),
+      recentActivity: [],
+      topProducts: [],
+      lastUpdated: new Date().toISOString()
+    });
   }
 });
 
