@@ -16,7 +16,9 @@ import reportsRoutes from './routes/reports';
 import authRoutes from './routes/auth';
 import settingsRoutes from './routes/settings';
 import logsRoutes from './routes/logs';
+import db from './db/database';
 import { startSupabasePullWorker, getPullSyncStatus } from './services/supabase-pull-sync.service';
+import { initializeProductSync, SyncOrchestrator } from '../sync';
 import { env } from './config/env';
 
 const app = express();
@@ -129,4 +131,32 @@ app.listen(PORT, () => {
   // Lightweight Supabase → SQLite pull worker (QR orders visibility)
   // Enabled via ENABLE_SUPABASE_PULL=true (recommended on local POS machines)
   startSupabasePullWorker();
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Bidirectional product stock + inventory_movements sync (SQLite ↔ Supabase)
+  // Uses the outbox engine. Runs in the SAME process that performs the writes
+  // (sales.ts / products.ts), so queueChange calls actually create outbox rows.
+  // ─────────────────────────────────────────────────────────────────────────────
+  if (!env.RENDER_CLOUD_MODE && db) {
+    const supabaseUrl = process.env.SUPABASE_URL;
+    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY;
+    const businessId = process.env.SYNC_BUSINESS_ID || 'default-business';
+
+    if (supabaseUrl && supabaseKey) {
+      try {
+        const syncService = initializeProductSync(db, supabaseUrl, supabaseKey);
+        const orchestrator = new SyncOrchestrator(syncService, db, businessId);
+
+        orchestrator.startScheduler(30000);           // PUSH + PULL every 30s
+        orchestrator.triggerSync().catch(() => {});   // kick off immediately
+
+        console.log(`[ProductSync] Bidirectional engine started (businessId=${businessId}, 30s interval)`);
+        console.log('[ProductSync] Stock adjustments and QR checkout sales will now push to Supabase');
+      } catch (err: any) {
+        console.error('[ProductSync] Failed to initialize bidirectional sync:', err?.message || err);
+      }
+    } else {
+      console.warn('[ProductSync] SUPABASE_URL or key missing — product sync disabled');
+    }
+  }
 });
