@@ -840,6 +840,7 @@ const T = {
     cancel:            d('Cancel', 'Annuler', 'Cancelar'),
     noProductsAvailable: d('No products available at the moment.', 'Aucun produit disponible pour le moment.', 'Nenhum produto disponível no momento.'),
     ourMenu:           d('Our Menu', 'Notre Carte', 'Nosso Menu'),
+    newOrder:          d('New order', 'Nouvelle commande', 'Novo pedido'),
 
     // Category translations for QR Menu (public)
     categories: {

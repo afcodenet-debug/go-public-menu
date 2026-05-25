@@ -1079,20 +1079,28 @@ const PublicMenuPage = () => {
             </>
           )}
 
-          {/* ANNULER (only after 'served') */}
-          {(pendingOrderStatus === 'served' || pendingOrderStatus === 'livrée') && (
-            <button
-              onClick={() => {
-                setPendingOrderMessage(null); setPendingOrderId(null); setActiveOrderId(null);
-                setPendingOrderStatus(null); setPendingOrderTotal(null); setOrderClientValidated(false);
-                setValidationPinInput(''); setLocalOrderData(null); setShowAccountCreation(false);
-                setOrderNotes(''); persistOrder(null, null, null, null);
-              }}
-              style={{ position: 'absolute', top: 55, right: 14, ...btnGhost, padding: '6px 12px', fontSize: 11, zIndex: 10 }}
-            >
-              {t('qrMenu.close')}
-            </button>
-          )}
+           {/* Clear / New order button (shown after served or paid) */}
+           {(pendingOrderStatus === 'served' || pendingOrderStatus === 'livrée' || pendingOrderStatus === 'paid') && (
+             <button
+               onClick={() => {
+                 // Clear states
+                 setPendingOrderMessage(null); setPendingOrderId(null); setActiveOrderId(null);
+                 setPendingOrderStatus(null); setPendingOrderTotal(null); setOrderClientValidated(false);
+                 setValidationPinInput(''); setLocalOrderData(null); setShowAccountCreation(false);
+                 setOrderNotes(''); persistOrder(null, null, null, null);
+
+                 // Clear localStorage so customer can place a fresh new order
+                 if (token) {
+                   localStorage.removeItem(`qr_pending_order_${token}`);
+                   localStorage.removeItem(`qr_local_order_${token}`);
+                   localStorage.removeItem(`qr_customer_${token}`);
+                 }
+               }}
+               style={{ position: 'absolute', top: 55, right: 14, ...btnGhost, padding: '6px 12px', fontSize: 11, zIndex: 10 }}
+             >
+               {pendingOrderStatus === 'paid' ? t('qrMenu.clear') : t('qrMenu.close')}
+             </button>
+           )}
         </div>
       )}
 
