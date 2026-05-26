@@ -772,49 +772,47 @@ const PublicMenuPage = () => {
     };
   }, [token, pendingOrderId, orderClientValidated]);
 
-  // ─── Fetch menu ───────────────────────────────────────────────────────────
+  // ─── Fetch menu (extracted so we can retry on transient network errors) ───
+  const loadMenu = async () => {
+    if (!token) return;
+
+    try {
+      setLoading(true);
+      setError(null);
+
+      const targetUrl = apiUrl(`/api/menu/table/${encodeURIComponent(token)}`);
+      console.log('[Frontend API URL]', targetUrl);
+
+      const res = await fetch(targetUrl);
+
+      if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        console.error('Menu fetch failed:', res.status, text);
+        throw new Error(`Erreur serveur (${res.status})`);
+      }
+
+      const data = await res.json();
+      setTable(data.table);
+      const normalized = (data.menu || []).map((cat: any) => ({
+        ...cat,
+        items: (cat.items || []).map((it: any) => ({ ...it, price: Number(it.price) || 0 })),
+      }));
+      setMenu(normalized);
+      setActivecat(normalized[0]?.id ?? null);
+    } catch (err) {
+      console.error('[MENU FETCH ERROR]', err);
+      setError(err instanceof Error ? err.message : 'Failed to fetch');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (!token) {
-      // No token → this is a direct/root visit to the public site (nice landing, not an error)
       setLoading(false);
       return;
     }
-
-    const fetchMenu = async () => {
-      try {
-        setLoading(true);
-        setError(null);
-
-        // Use the same robust resolver as the rest of the page (never localhost in production)
-        const targetUrl = apiUrl(`/api/menu/table/${encodeURIComponent(token)}`);
-
-        console.log('[Frontend API URL]', targetUrl);
-
-        const res = await fetch(targetUrl);
-
-        if (!res.ok) {
-          const text = await res.text().catch(() => '');
-          console.error('Menu fetch failed:', res.status, text);
-          throw new Error(`Erreur serveur (${res.status})`);
-        }
-
-        const data = await res.json();
-        setTable(data.table);
-        const normalized = (data.menu || []).map((cat: any) => ({
-          ...cat,
-          items: (cat.items || []).map((it: any) => ({ ...it, price: Number(it.price) || 0 })),
-        }));
-        setMenu(normalized);
-        setActivecat(normalized[0]?.id ?? null);
-      } catch (err) {
-        console.error('[MENU FETCH ERROR]', err);
-        setError(err instanceof Error ? err.message : 'Failed to fetch');
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchMenu();
+    loadMenu();
   }, [token]);
 
   // ─── Loading ──────────────────────────────────────────────────────────────
@@ -850,20 +848,40 @@ const PublicMenuPage = () => {
     );
   }
 
-  if (error || !table) return (
-    <div style={{ minHeight: '100vh', background: T.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 32, fontFamily: T.sans }}>
-      <div style={{ maxWidth: 340, textAlign: 'center' }}>
-        <div style={{ width: 60, height: 60, borderRadius: '50%', border: `1.5px solid ${T.goldBorder}`, background: T.bg2, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 24px' }}>
-          <UtensilsCrossed color={T.gold} size={26} />
+  if (error || !table) {
+    const isNetworkError = error && /network|fetch|failed to fetch/i.test(error);
+
+    return (
+      <div style={{ minHeight: '100vh', background: T.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 32, fontFamily: T.sans }}>
+        <div style={{ maxWidth: 380, textAlign: 'center' }}>
+          <div style={{ width: 60, height: 60, borderRadius: '50%', border: `1.5px solid ${T.goldBorder}`, background: T.bg2, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 24px' }}>
+            <UtensilsCrossed color={T.gold} size={26} />
+          </div>
+
+          <h1 style={{ fontFamily: T.serif, fontSize: 34, fontWeight: 700, color: T.text, marginBottom: 12, lineHeight: 1.1 }}>
+            {isNetworkError ? 'Serveur en cours de démarrage' : 'Menu indisponible'}
+          </h1>
+
+          <p style={{ color: T.text2, fontSize: 15, marginBottom: 20, lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>
+            {isNetworkError
+              ? "Le backend du menu (Render gratuit) s'est endormi. Le premier appel après inactivité peut prendre 15-30 secondes."
+              : error}
+          </p>
+
+          <button
+            onClick={() => { if (isNetworkError) { loadMenu(); } else { window.location.reload(); } }}
+            style={{ ...btnGoldSolid, marginTop: 8 }}
+          >
+            {isNetworkError ? 'Réessayer maintenant' : 'Recharger la page'}
+          </button>
+
+          <p style={{ color: T.text3, fontSize: 12, letterSpacing: '0.05em', lineHeight: 1.7, marginTop: 16 }}>
+            Scannez le QR code de votre table ou demandez un nouveau code au personnel.
+          </p>
         </div>
-        <h1 style={{ fontFamily: T.serif, fontSize: 34, fontWeight: 700, color: T.text, marginBottom: 12, lineHeight: 1.1 }}>Menu indisponible</h1>
-        <p style={{ color: T.text2, fontSize: 15, marginBottom: 20, lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>
-          {error}
-        </p>
-        <p style={{ color: T.text3, fontSize: 12, letterSpacing: '0.05em', lineHeight: 1.7 }}>Scannez le QR code de votre table ou demandez un nouveau code au personnel.</p>
       </div>
-    </div>
-  );
+    );
+  }
 
   const showBanner = (pendingOrderMessage || localOrderData || pendingOrderId) && !(pendingOrderId && bannerDismissed);
 
