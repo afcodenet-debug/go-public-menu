@@ -53,7 +53,7 @@ const apiUrl = (endpoint: string) => {
 // ─── Local QR Menu Translator (default English, independent of staff settings) ───
 import { translations } from '../lib/i18n';
 
-function qrT(lang: 'en' | 'fr' | 'pt', key: string, params?: Record<string, string | number>): string {
+function qrT(lang: 'en' | 'fr' | 'pt', key: string, params?: Record<string, any>): string {
   const qrMenuNs = (translations as any).qrMenu || {};
   
   // Allow calling with or without "qrMenu." prefix
@@ -81,7 +81,11 @@ function qrT(lang: 'en' | 'fr' | 'pt', key: string, params?: Record<string, stri
 
   // Always apply param interpolation AFTER getting the text
   if (params) {
-    text = text.replace(/\{(\w+)\}/g, (_, k) => String(params[k] ?? `{${k}}`));
+    text = text.replace(/\{(\w+)\}/g, (_, k) => {
+      const v = params[k];
+      if (v === undefined || v === null) return `{${k}}`;
+      return String(typeof v === 'function' ? '' : v);
+    });
   }
 
   return text;
@@ -234,14 +238,26 @@ const PublicMenuPage = () => {
   // 1) ?token=<qr_token> (query param)
   // 2) /menu/table/<qr_token> (path segment) — what the QR codes use
   const tokenFromQuery = searchParams.get('token') || '';
+  const tokenLooksValid = (v: string) => {
+    const s = String(v || '').trim();
+    // QR token is hex/alphanum and long (example: e4dcff57ac52430a...)
+    // Keep it permissive but avoid empty/malformed values.
+    return s.length >= 12 && /^[a-zA-Z0-9]+$/.test(s);
+  };
+
   const tokenFromPath = (() => {
     try {
       const parts = String(location.pathname || '').split('/').filter(Boolean);
+
       // expected tail: .../menu/table/:qr_token
       const tokenIndex = parts.lastIndexOf('table');
-      if (tokenIndex >= 0 && parts[tokenIndex + 1]) return parts[tokenIndex + 1];
+      if (tokenIndex >= 0 && tokenIndex + 1 < parts.length && tokenLooksValid(parts[tokenIndex + 1])) {
+        return parts[tokenIndex + 1];
+      }
+
       // fallback: if route is directly /menu/<anything>/<token>
-      return parts[parts.length - 1] || '';
+      const last = parts[parts.length - 1] || '';
+      return tokenLooksValid(last) ? last : '';
     } catch {
       return '';
     }
