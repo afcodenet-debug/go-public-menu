@@ -6,6 +6,7 @@ import fs from 'fs';
 import { getProductSyncService } from '../../sync';
 import { AnalyticsService } from '../services/analytics.service';
 import { notifyStockAdjustment, notifyNewProduct, loadRawSettings } from '../services/notification.service';
+import { createNotification } from '../services/notification.repository';
 import { env } from '../config/env';
 import { productService } from '../products/services/product.service';
 import { createClient } from '@supabase/supabase-js';
@@ -81,6 +82,11 @@ router.get('/:id', async (req, res) => {
   try {
     const { id } = req.params;
     const isSupabaseMode = env.RENDER_CLOUD_MODE || env.USE_SUPABASE_PRODUCTS;
+
+    if (!db && !isSupabaseMode) {
+      console.warn('[Products] SQLite disabled (db is null). Returning 404 for /products/:id');
+      return res.status(404).json({ error: 'Product not found (SQLite disabled)' });
+    }
 
     if (isSupabaseMode) {
       const businessId = (req as any).businessId;
@@ -279,11 +285,20 @@ router.patch('/:id', requireRole(['admin', 'manager']), async (req, res) => {
 
       const result = stmt.run(...vals, id);
 
-      if (result.changes > 0) {
-        // Queue for sync
-        // syncService.queueChange('products', 'UPDATE', parseInt(id), updateData);
+if (result.changes > 0) {
+         // Queue for sync (outbox pattern)
+         try {
+           const sync = getProductSyncService();
+           sync.queueChangeInsideTransaction('product', 'update', {
+             id: Number(id),
+             ...updateData,
+             updated_at: new Date().toISOString(),
+           });
+         } catch (syncErr) {
+           console.warn('[Sync] Could not queue product change:', syncErr);
+         }
 
-        res.json({ success: true });
+         res.json({ success: true });
       } else {
         res.status(404).json({ error: 'Product not found' });
       }
@@ -342,6 +357,10 @@ router.delete('/:id', requireRole(['admin', 'manager']), (req, res) => {
 router.get('/low-stock', async (_req, res) => {
   try {
     const isSupabaseMode = env.RENDER_CLOUD_MODE || env.USE_SUPABASE_PRODUCTS;
+    if (!db && !isSupabaseMode) {
+      console.warn('[Products] SQLite disabled (db is null). Returning [] for low-stock');
+      return res.json([]);
+    }
     if (isSupabaseMode) {
       const businessId = (_req as any).businessId;
       const result = await productService.listProducts(businessId, { is_available: true, limit: 500, page: 1 });
@@ -362,8 +381,13 @@ router.get('/low-stock', async (_req, res) => {
       ORDER BY (p.minimum_stock - p.stock_quantity) DESC
     `).all();
     res.json(products);
-  } catch (error) {
-    console.error('[PRODUCTS_ROUTE_ERROR] Error fetching low stock products:', error);
+  } catch (error: any) {
+    console.error('[PRODUCTS API FORENSIC ERROR] /low-stock', {
+      message: error?.message,
+      sqliteCode: error?.code || error?.errno,
+      stack: error?.stack,
+      isSupabaseMode: env.RENDER_CLOUD_MODE || env.USE_SUPABASE_PRODUCTS
+    });
     res.status(500).json({ error: 'Failed to fetch low stock products' });
   }
 });
@@ -434,6 +458,24 @@ router.post('/:id/adjust-stock', requireRole(['admin', 'manager']), (req, res) =
       user_id || null,
       'manual'
     );
+
+    // Concrete trigger for STOCK_LOW (Phase 3)
+    try {
+      const minStock = productRow.minimum_stock || 0;
+      if (qtyAfter <= minStock && qtyBefore > minStock) {
+        createNotification({
+          type: 'stockLow',
+          title: 'Stock faible',
+          message: `${productRow.name} est tombé sous le seuil minimum (${qtyAfter}/${minStock})`,
+          priority: 'high',
+          notification_type: 'STOCK_LOW',
+          link: '/products',
+          metadata: { product_id: id, stock: qtyAfter, minimum: minStock },
+        });
+      }
+    } catch (e) {
+      console.warn('[Products] Failed to create STOCK_LOW notification', e);
+    }
 
     // Queue for Supabase push (outbox pattern)
     try {
@@ -552,6 +594,11 @@ router.post(
 router.get('/', async (req, res) => {
   try {
     const isSupabaseMode = env.RENDER_CLOUD_MODE || env.USE_SUPABASE_PRODUCTS;
+
+    if (!db && !isSupabaseMode) {
+      console.warn('[Products] SQLite disabled (db is null) and not in Supabase mode. Returning [] for GET /products');
+      return res.json([]);
+    }
 
     if (isSupabaseMode) {
       const businessId = (req as any).businessId || undefined;
@@ -690,8 +737,15 @@ router.get('/', async (req, res) => {
         hasPrev: page > 1
       }
     });
-  } catch (error) {
-    console.error('Error fetching products:', error);
+  } catch (error: any) {
+    console.error('[PRODUCTS API FORENSIC ERROR] GET /products', {
+      message: error?.message,
+      sqliteCode: error?.code || error?.errno || 'N/A',
+      stack: error?.stack?.split('\n').slice(0, 8).join('\n'),
+      query: 'legacy or repository path',
+      isSupabaseMode: env.RENDER_CLOUD_MODE || env.USE_SUPABASE_PRODUCTS,
+      dbNull: !db
+    });
     res.status(500).json({ error: 'Failed to fetch products' });
   }
 });

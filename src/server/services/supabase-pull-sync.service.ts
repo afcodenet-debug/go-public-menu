@@ -14,6 +14,8 @@
 
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { db } from '../db/database';
+import { env } from '../config/env';
+import { createNotification } from './notification.repository';
 
 let pullInterval: NodeJS.Timeout | null = null;
 let isPulling = false;
@@ -58,8 +60,25 @@ interface PullConfig {
 const BOOTSTRAP_LOOKBACK_MINUTES = 60; // Wider on startup to catch recent QR orders reliably during testing/dev
 
 function getPullConfig(): PullConfig {
+  const explicit = process.env.ENABLE_SUPABASE_PULL;
+  const hasSupabaseCreds = !!process.env.SUPABASE_URL && !!process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  // Smart default:
+  // - If explicitly set to false/0 → disabled (even if creds present)
+  // - If explicitly true/1 → enabled
+  // - Otherwise: auto-enable when Supabase creds exist AND we are not in pure cloud mode
+  let enabled: boolean;
+  if (explicit === 'false' || explicit === '0') {
+    enabled = false;
+  } else if (explicit === 'true' || explicit === '1') {
+    enabled = true;
+  } else {
+    // Auto-enable for normal hybrid setups (local POS + Supabase). This makes QR Menu orders visible out of the box.
+    enabled = hasSupabaseCreds && !env.RENDER_CLOUD_MODE;
+  }
+
   return {
-    enabled: (process.env.ENABLE_SUPABASE_PULL === 'true' || process.env.ENABLE_SUPABASE_PULL === '1'),
+    enabled,
     intervalMs: parseInt(process.env.SUPABASE_PULL_INTERVAL_MS || '8000', 10),
     lookbackMinutes: parseInt(process.env.SUPABASE_PULL_LOOKBACK_MIN || '60', 10),
   };
@@ -77,6 +96,10 @@ function getSupabaseClient(): SupabaseClient {
 
 /** Ensure supporting columns + unique index for true idempotency */
 function ensureRemoteSyncSchema() {
+  if (!db) {
+    console.warn('[PullSync] Skipping remote schema ensure (local SQLite disabled, db is null)');
+    return;
+  }
   try {
     // orders
     const orderCols = db.prepare("PRAGMA table_info(orders)").all() as Array<{ name: string }>;
@@ -100,6 +123,7 @@ function ensureRemoteSyncSchema() {
 }
 
 function ensureMetadataTable() {
+  if (!db) return;
   db.exec(`
     CREATE TABLE IF NOT EXISTS sync_metadata (
       key TEXT PRIMARY KEY,
@@ -117,6 +141,7 @@ function getLastPullCursor(): string | null {
 }
 
 function savePullCursor(iso: string) {
+  if (!db) return;
   db.prepare(`
     INSERT INTO sync_metadata (key, value, updated_at)
     VALUES ('last_supabase_pull', ?, CURRENT_TIMESTAMP)
@@ -226,8 +251,59 @@ async function pullOrders(supabase: SupabaseClient, sinceIso: string) {
             o.updated_at
           );
 
-          lastPullStatus.ordersInserted++;
-          console.log(`[PullSync]   → INSERTED (remote_id=${remoteId})`);
+            lastPullStatus.ordersInserted++;
+            console.log(`[PullSync]   → INSERTED (remote_id=${remoteId})`);
+
+            // ─────────────────────────────────────────────────────────────
+            // LOUD OPERATIONAL SIGNAL for staff visibility / debugging
+            // When a brand new pending QR order arrives from the public menu,
+            // this is the moment the local POS "learns" about it.
+            if ((o.status || 'pending') === 'pending') {
+              console.log('');
+              console.log('════════════════════════════════════════════════════════════');
+              console.log('📣  NEW QR MENU ORDER RECEIVED  📣');
+              console.log(`   remote_id : ${remoteId}`);
+              console.log(`   table_id  : ${o.table_id}  (${tableLabel})`);
+              console.log(`   total     : ${Number(o.total) || 0}`);
+              console.log(`   items     : ${(o.items?.length || 0)} article(s)`);
+              console.log(`   created   : ${o.created_at}`);
+              console.log('   → This order is now visible in the local Orders screen.');
+              console.log('   → Staff should see the red "pending" card + in-app toast.');
+              console.log('════════════════════════════════════════════════════════════');
+              console.log('');
+
+              // Concrete trigger for NEW_QR_ORDER (Phase 3)
+              try {
+                createNotification({
+                  type: 'newQrOrder',
+                  title: 'Nouvelle commande QR',
+                  message: `Table ${tableLabel} — ${o.items?.length || 0} article(s) en attente`,
+                  priority: 'high',
+                  notification_type: 'NEW_QR_ORDER',
+                  link: '/orders',
+                  metadata: { remote_id: remoteId, table_id: o.table_id },
+                });
+              } catch (e) {
+                console.warn('[PullSync] Failed to create in-app notification for QR order', e);
+              }
+
+              // Desktop notification (works in Electron main process)
+              try {
+                // eslint-disable-next-line @typescript-eslint/no-var-requires
+                const electron = require('electron');
+                const Notification = electron.Notification || (electron.app && electron.app.Notification);
+                if (Notification && Notification.isSupported && Notification.isSupported()) {
+                  new Notification({
+                    title: 'Nouvelle commande QR Menu',
+                    body: `${tableLabel} — ${o.items?.length || 0} article(s) — En attente de validation`,
+                    silent: false,
+                    icon: undefined
+                  }).show();
+                }
+              } catch {
+                // Not running in Electron or Notification not available — ignore
+              }
+            }
         } catch (insertErr: any) {
           if (insertErr.message?.includes('active order')) {
             // Graceful conflict resolution for QR orders:
@@ -381,14 +457,45 @@ export async function runSupabasePullOnce(): Promise<void> {
       effectiveSince = storedCursor || new Date(Date.now() - config.lookbackMinutes * 60 * 1000).toISOString();
     }
 
+    // We will compute the real high-water mark from the data we actually received.
+    // This is critical for correctness (avoids missing rows due to clock skew or slow inserts).
+    let highWaterMark: string | null = null;
+
+    const updateHighWater = (ts: string | null | undefined) => {
+      if (!ts) return;
+      if (!highWaterMark || ts > highWaterMark) highWaterMark = ts;
+    };
+
+    // Monkey-patch the pull functions temporarily to collect max ts (simple & contained)
+    // Better: we will do it by re-querying the max after the pulls for the remote orders we touched.
+    // For robustness, after the pulls, we compute the actual max updated_at/created_at among all remote orders we know locally.
     await pullOrders(supabase, effectiveSince);
     await pullOrderItems(supabase, effectiveSince);
 
-    const now = new Date().toISOString();
-    savePullCursor(now);
+    // Compute the best possible next cursor: the max timestamp among all orders that have a remote_id
+    // (i.e. came from Supabase). This is the true high-water mark for QR / remote orders.
+    try {
+      const row = db.prepare(`
+        SELECT MAX(CASE 
+          WHEN updated_at > created_at THEN updated_at 
+          ELSE created_at 
+        END) as max_ts 
+        FROM orders 
+        WHERE remote_id IS NOT NULL
+      `).get() as { max_ts: string | null } | undefined;
 
-    lastPullStatus.lastCursor = now;
-    lastPullStatus.lastSuccessfulPullAt = now;
+      if (row?.max_ts) {
+        highWaterMark = row.max_ts;
+      }
+    } catch (e) {
+      console.warn('[PullSync] Could not compute high-water mark from DB, falling back to wall time');
+    }
+
+    const nextCursor = highWaterMark || new Date().toISOString();
+    savePullCursor(nextCursor);
+
+    lastPullStatus.lastCursor = nextCursor;
+    lastPullStatus.lastSuccessfulPullAt = new Date().toISOString();
     lastPullStatus.lastError = lastPullStatus.errors.length > 0 ? lastPullStatus.errors[0] : null;
 
     if (lastPullStatus.ordersPulled > 0 || lastPullStatus.itemsPulled > 0) {

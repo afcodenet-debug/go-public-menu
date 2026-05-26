@@ -1,3 +1,6 @@
+// Load .env into process.env as early as possible (critical for hybrid Supabase + local SQLite mode)
+import 'dotenv/config';
+
 import express from 'express';
 import menuRoutes from './routes/menu';
 import tablesRoutes from './routes/tables';
@@ -18,6 +21,7 @@ import settingsRoutes from './routes/settings';
 import logsRoutes from './routes/logs';
 import db from './db/database';
 import { startSupabasePullWorker, getPullSyncStatus } from './services/supabase-pull-sync.service';
+import { startScheduledReports } from './services/scheduled-reports.service';
 import { initializeProductSync, SyncOrchestrator } from '../sync';
 import { env } from './config/env';
 
@@ -129,8 +133,15 @@ app.listen(PORT, () => {
   console.log('[RENDER BOOT] endpoints mounted: /health, /test, /api/auth, /api/menu, /api/tables, /api/products, /api/categories, /api/orders, /api/sales, /api/expenses, /api/dashboard, /api/users, /api/settings, /api/logs, /api/inventory, /api/reports, /api/suppliers, /api/purchase-orders, /api/stock-adjustments');
 
   // Lightweight Supabase → SQLite pull worker (QR orders visibility)
-  // Enabled via ENABLE_SUPABASE_PULL=true (recommended on local POS machines)
+  // Auto-enabled when SUPABASE_URL + SERVICE_ROLE_KEY are present (unless explicitly disabled with ENABLE_SUPABASE_PULL=false).
+  // This is what makes customer orders from the public QR Menu appear in the staff POS.
   startSupabasePullWorker();
+
+  // Scheduled email reports (Morning / Midday / EOD)
+  // Only starts on local POS machines (not in pure cloud mode)
+  if (!env.RENDER_CLOUD_MODE) {
+    startScheduledReports();
+  }
 
   // ─────────────────────────────────────────────────────────────────────────────
   // Bidirectional product stock + inventory_movements sync (SQLite ↔ Supabase)

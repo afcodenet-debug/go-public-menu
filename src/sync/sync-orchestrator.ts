@@ -3,7 +3,7 @@
 // Handles scheduling, mutex, offline detection, crash recovery, and lastSync persistence
 
 import { ProductSyncService } from './product-sync.service';
-import Database from 'better-sqlite3';
+import type Database from 'better-sqlite3';
 
 interface SyncState {
   lastPullTimestamp: string | null;

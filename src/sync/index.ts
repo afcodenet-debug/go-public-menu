@@ -2,7 +2,7 @@
 // Point d'entrée du module Sync Engine
 
 import { ProductSyncService } from './product-sync.service';
-import Database from 'better-sqlite3';
+import type Database from 'better-sqlite3';
 
 let productSyncService: ProductSyncService | null = null;
 

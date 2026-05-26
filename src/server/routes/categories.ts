@@ -28,6 +28,10 @@ router.get('/', async (req, res) => {
     }
   }
   // legacy
+  if (!db) {
+    console.warn('[Categories] SQLite disabled (db is null). Returning []');
+    return res.json([]);
+  }
   try {
     const categories = db.prepare(`
       SELECT

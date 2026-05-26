@@ -53,6 +53,7 @@ interface OrderStore {
   };
   userId?: number;
   role?: string;
+  pendingQrCount: number;
   setUserContext: (userId: number, role: string) => void;
   setFilters: (filters: Partial<OrderStore['filters']>) => void;
   fetchActiveOrders: () => Promise<void>;
@@ -77,6 +78,7 @@ export const useOrderStore = create<OrderStore>((set, get) => ({
   filters: {},
   userId: undefined,
   role: undefined,
+  pendingQrCount: 0,
 
   setUserContext: (userId, role) => set({ userId, role }),
 
@@ -118,13 +120,20 @@ export const useOrderStore = create<OrderStore>((set, get) => ({
 
       if (response && typeof response === 'object' && Array.isArray(response.orders)) {
         console.log('[OrderStore] Received orders:', response.orders.length);
+
+        const orders = response.orders as Order[];
+        // Centralised pending QR detection (used by Sidebar badge + global toast)
+        const pendingQr = orders.filter(o => o.status === 'pending');
+        const pendingQrCount = pendingQr.length;
+
         set({
-          allOrders: response.orders as Order[],
-          stats: (response.stats as OrderStore['stats']) || get().stats
+          allOrders: orders,
+          stats: (response.stats as OrderStore['stats']) || get().stats,
+          pendingQrCount
         });
       } else {
         console.warn('[OrderStore] Invalid response format:', response);
-        set({ allOrders: [] });
+        set({ allOrders: [], pendingQrCount: 0 });
       }
     } catch (err) {
       console.error('Failed to fetch all orders:', err);
@@ -208,3 +217,24 @@ export const useOrderStore = create<OrderStore>((set, get) => ({
     }
   }
 }));
+
+// Auto-feed the global notification store when new QR orders arrive
+// (light integration - can be moved to a dedicated watcher later)
+import { useNotificationStore } from './useNotificationStore';
+
+let previousPendingQr = 0;
+useOrderStore.subscribe((state) => {
+  const current = state.pendingQrCount;
+  if (current > previousPendingQr) {
+    const diff = current - previousPendingQr;
+    useNotificationStore.getState().addNotification({
+      type: 'newQrOrder' as any,
+      title: 'Nouvelle commande QR',
+      message: `${diff} nouvelle(s) commande(s) en attente de validation`,
+      priority: 'high',
+      link: '/orders',
+      metadata: { count: current },
+    });
+  }
+  previousPendingQr = current;
+});

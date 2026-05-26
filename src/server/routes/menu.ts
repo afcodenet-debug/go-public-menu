@@ -504,6 +504,22 @@ router.post('/checkout', async (req, res) => {
       itemsCount: items.length,
     });
 
+    // Loud signal so operators see immediately in server logs (even before pull sync)
+    console.log('');
+    console.log('══════════════════════════════════════════════════════════════');
+    console.log('📣  QR CUSTOMER ORDER SUBMITTED  📣');
+    console.log(`   order_id (Supabase) : ${newOrderId}`);
+    console.log(`   table               : ${table.table_number} (id=${table.id})`);
+    console.log(`   assigned_waiter_id  : ${waiterId}`);
+    console.log(`   total               : ${Number(req.body.total || 0)}`);
+    console.log(`   items               : ${items.length}`);
+    console.log('   → Order is now in Supabase with status=pending');
+    console.log('   → The Supabase→SQLite pull worker will make it visible to staff POS.');
+    console.log('   → If staff sees nothing: check that ENABLE_SUPABASE_PULL is effective');
+    console.log('     (it now auto-enables when Supabase creds are present).');
+    console.log('══════════════════════════════════════════════════════════════');
+    console.log('');
+
     // Best decision: automatically repair the orders.id sequence after every public QR order.
     // This prevents the "duplicate key on orders_pkey" error from recurring due to sync/manual inserts.
     try {

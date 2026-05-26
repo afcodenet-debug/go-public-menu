@@ -1,4 +1,4 @@
-import Database from 'better-sqlite3';
+import type Database from 'better-sqlite3';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { ProductEntity } from '../server/products/types/product.types'; // Réutilisation des types backend
 
@@ -232,32 +232,86 @@ export class ProductSyncService {
 
     let applied = 0;
 
-    for (const remoteProduct of (data || []) as Array<{ id: string; version: number; [key: string]: any }>) {
-      const local = this.db
-        .prepare('SELECT version, updated_at FROM products WHERE id = ?')
-        .get(remoteProduct.id) as { version?: number; updated_at?: string } | undefined;
+    for (const remoteProduct of (data || []) as Array<{ id: any; [key: string]: any }>) {
+      try {
+        const remoteId = Number(remoteProduct?.id);
+        if (isNaN(remoteId)) {
+          console.warn('[Sync] Skipping remote product with invalid id during pull:', remoteProduct?.id);
+          continue;
+        }
 
-      // Conflit resolution : on prend la version la plus récente
-      if (!local || remoteProduct.version > (local.version || 0)) {
-        this.db.prepare(`
-          INSERT OR REPLACE INTO products 
-          (id, business_id, name, price, stock_quantity, updated_at, version, sync_status)
-          VALUES (?, ?, ?, ?, ?, ?, ?, 'synced')
-        `).run(
-          remoteProduct.id,
-          remoteProduct.business_id,
-          remoteProduct.name,
-          remoteProduct.price,
-          remoteProduct.stock_quantity,
-          remoteProduct.updated_at,
-          remoteProduct.version
-        );
+        // Tolerant local query — only select columns that are guaranteed to exist in legacy schema
+        const local = this.db
+          .prepare('SELECT updated_at FROM products WHERE id = ?')
+          .get(remoteId) as { updated_at?: string } | undefined;
+
+        const remoteUpdatedAt = remoteProduct.updated_at;
+
+        // Simple conflict resolution using updated_at (no version column in legacy schema)
+        const shouldApply = !local || !local.updated_at || (remoteUpdatedAt && remoteUpdatedAt > local.updated_at);
+
+      if (shouldApply) {
+        // Safe update of only the fields we know exist or want to sync (focus on stock)
+        const safeFields: Record<string, any> = {};
+
+        // Always ensure updated_at is a string (Supabase client sometimes returns Date objects)
+        safeFields.updated_at = remoteUpdatedAt
+          ? (remoteUpdatedAt instanceof Date ? remoteUpdatedAt.toISOString() : (remoteUpdatedAt ? String(remoteUpdatedAt) : new Date().toISOString()))
+          : new Date().toISOString();
+
+        if (remoteProduct.stock_quantity !== undefined) safeFields.stock_quantity = remoteProduct.stock_quantity;
+        if (remoteProduct.name !== undefined)            safeFields.name = remoteProduct.name;
+        if (remoteProduct.price !== undefined)           safeFields.price = remoteProduct.price;
+        if (remoteProduct.selling_price !== undefined)   safeFields.selling_price = remoteProduct.selling_price;
+        if (remoteProduct.buying_price !== undefined)    safeFields.buying_price = remoteProduct.buying_price;
+        if (remoteProduct.is_available !== undefined)    safeFields.is_available = remoteProduct.is_available;
+
+// Sanitize all values before binding to SQLite (prevent Date objects, undefined, booleans, etc.)
+        const sanitize = (val: any) => {
+          if (val === undefined || val === null) return null;
+          if (val instanceof Date) return val.toISOString();
+          if (typeof val === 'boolean') return val ? 1 : 0;
+          return val;
+        };
+
+        // Only sync these specific fields (exclude image_url and other potentially problematic fields)
+        const allowedFields = ['updated_at', 'stock_quantity', 'name', 'price', 'selling_price', 'buying_price', 'is_available'];
+        const updateFields = Object.keys(safeFields).filter(k => allowedFields.includes(k));
+
+        if (updateFields.length === 0) {
+          console.log('[Sync] No fields to update for product', remoteId);
+          applied++;
+          continue;
+        }
+
+        const setClauses = updateFields.map(k => `"${k}" = ?`).join(', ');
+        const updateParams = updateFields.map(k => sanitize(safeFields[k])).concat([remoteId]);
+
+        // Try update first
+        const updateResult = this.db.prepare(`
+          UPDATE products SET ${setClauses} WHERE id = ?
+        `).run(...updateParams);
+
+        if (updateResult.changes === 0) {
+          // Row doesn't exist locally → minimal insert
+          const insertKeys = ['id', ...updateFields];
+          const insertParams = [remoteId, ...updateFields.map(k => sanitize(safeFields[k]))];
+          this.db.prepare(`
+            INSERT INTO products (${insertKeys.map(c => `"${c}"`).join(', ')})
+            VALUES (${insertParams.map(() => '?').join(', ')})
+          `).run(...insertParams);
+        }
+
         applied++;
+      }
+      } catch (perProductErr: any) {
+        console.error('[Sync] Error processing one remote product in pull (continuing with others):', perProductErr?.message || perProductErr, 'product=', remoteProduct);
       }
     }
 
-    if (data && data.length > 0) {
-      this.lastPullTimestamp = data[data.length - 1].updated_at;
+if (data && data.length > 0) {
+      const lastUpdatedAt = data[data.length - 1].updated_at;
+      this.lastPullTimestamp = lastUpdatedAt instanceof Date ? lastUpdatedAt.toISOString() : String(lastUpdatedAt || '');
     }
 
     return applied;

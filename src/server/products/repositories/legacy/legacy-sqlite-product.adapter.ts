@@ -2,12 +2,23 @@ import { db } from '../../../db/database';
 import { IProductRepository } from '../product.repository.interface';
 import { ProductEntity } from '../../types/product.types';
 
+function forensicLog(label: string, err: any, sql?: string, params?: any[]) {
+  console.error(`[PRODUCTS REPO FORENSIC ERROR] ${label}`, {
+    message: err?.message,
+    sqliteCode: err?.code || err?.errno || 'N/A',
+    stack: err?.stack?.split('\n').slice(0, 6).join('\n'),
+    sql: sql || 'N/A',
+    params: params || [],
+    dbIsNull: !db
+  });
+}
+
 export class LegacySQLiteProductAdapter implements IProductRepository {
   async findById(id: string, businessId: string): Promise<ProductEntity | null> {
     // Legacy SQLite may not store business_id; keep parameter for interface compatibility.
-    const row = db
-      .prepare(
-        `
+    let row: any;
+    try {
+      const selectSql = `
       SELECT
         id,
         business_id,
@@ -35,9 +46,12 @@ export class LegacySQLiteProductAdapter implements IProductRepository {
       WHERE id = ?
         AND (deleted_at IS NULL OR deleted_at = '')
       LIMIT 1
-    `
-      )
-      .get(id) as any | undefined;
+    `;
+      row = db.prepare(selectSql).get(id) as any | undefined;
+    } catch (err: any) {
+      forensicLog('findById', err, 'SELECT ... FROM products WHERE id = ?', [id]);
+      throw err;
+    }
 
     if (!row) return null;
 
@@ -106,46 +120,53 @@ export class LegacySQLiteProductAdapter implements IProductRepository {
 
     const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
 
-    const countRow = db
-      .prepare(`SELECT COUNT(1) as total FROM products ${whereSql}`)
-      .get(...params) as any;
+    let countRow: any;
+    let rows: any[] = [];
+    try {
+      countRow = db
+        .prepare(`SELECT COUNT(1) as total FROM products ${whereSql}`)
+        .get(...params) as any;
+
+      rows = db
+        .prepare(
+          `
+        SELECT
+          id,
+          business_id,
+          branch_id,
+          category_id,
+          name,
+          description,
+          sku,
+          barcode,
+          selling_price as price,
+          cost_price,
+          stock_quantity,
+          minimum_stock as low_stock_threshold,
+          image_url,
+          is_available,
+          is_featured,
+          sort_order,
+          metadata,
+          version,
+          sync_status,
+          created_at,
+          updated_at,
+          deleted_at
+        FROM products
+        ${whereSql}
+        ORDER BY ${sortColumn} ${sortOrder.toUpperCase()}
+        LIMIT ?
+        OFFSET ?
+      `
+        )
+        .all(...params, limit, offset) as any[];
+    } catch (err: any) {
+      forensicLog('findAll / listProducts', err, `SELECT ... FROM products ${whereSql}`, params);
+      throw err;
+    }
 
     const total = Number(countRow?.total ?? 0);
-
-    const rows = db
-      .prepare(
-        `
-      SELECT
-        id,
-        business_id,
-        branch_id,
-        category_id,
-        name,
-        description,
-        sku,
-        barcode,
-        selling_price as price,
-        cost_price,
-        stock_quantity,
-        minimum_stock as low_stock_threshold,
-        image_url,
-        is_available,
-        is_featured,
-        sort_order,
-        metadata,
-        version,
-        sync_status,
-        created_at,
-        updated_at,
-        deleted_at
-      FROM products
-      ${whereSql}
-      ORDER BY ${sortColumn} ${sortOrder.toUpperCase()}
-      LIMIT ?
-      OFFSET ?
-    `
-      )
-      .all(...params, limit, offset) as any[];
 
     return {
       data: (rows || []).map(r => this.map(r)),

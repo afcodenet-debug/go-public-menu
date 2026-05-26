@@ -11,7 +11,7 @@
  * Future: renderer usage will go through IPC to the main-process sync engine.
  */
 
-import Database from 'better-sqlite3';
+import type Database from 'better-sqlite3';
 
 export type OutboxQueuedOperation = {
   entity: string;

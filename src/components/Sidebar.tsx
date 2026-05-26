@@ -3,6 +3,9 @@ import { useAuthStore } from '../stores/useAuthStore';
 import { useI18n } from '../lib/i18n';
 import { EnterpriseTokens } from '../lib/design-system';
 import { APP_NAME } from '../lib/app-config';
+import { useOrderStore } from '../stores/useOrderStore';
+import { useNotificationStore } from '../stores/useNotificationStore';
+import { Bell } from 'lucide-react';
 import {
   LayoutDashboard,
   UtensilsCrossed,
@@ -22,6 +25,7 @@ import {
   Tag,
 } from 'lucide-react';
 import { SettingsSelector } from './SettingsSelector';
+import { NotificationBadge } from './NotificationBadge';
 
 const MENU = [
   { path: '/',         labelKey: 'sidebar.dashboard',    icon: LayoutDashboard, roles: ['admin', 'manager', 'cashier'] },
@@ -51,6 +55,8 @@ const Sidebar = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const { colors, typography, radius } = EnterpriseTokens;
+  const { pendingQrCount } = useOrderStore();
+  const { unreadCount, markAllAsRead, openCenter } = useNotificationStore();
 
   const handleLogout = () => {
     logout();
@@ -162,6 +168,11 @@ const Sidebar = () => {
                     }}>
                       {t(item.labelKey)}
                     </span>
+
+                    {/* Notification badge ONLY on the Orders nav item (orange) */}
+                    {item.path === '/orders' && (
+                      <NotificationBadge count={pendingQrCount + unreadCount} color="#f59e0b" />
+                    )}
                   </div>
                   {isActive && <ChevronRight size={14} color={colors.accent.gold} />}
                 </Link>
@@ -221,6 +232,35 @@ const Sidebar = () => {
             </div>
           </div>
         </div>
+
+        {/* Global Notifications Bell */}
+        <button
+          onClick={() => {
+            openCenter();
+            markAllAsRead();
+          }}
+          style={{
+            width: '100%',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '8px 12px',
+            marginBottom: '8px',
+            background: 'transparent',
+            border: `1px solid ${colors.border}`,
+            borderRadius: radius.md,
+            color: colors.text3,
+            fontSize: '11px',
+            cursor: 'pointer',
+          }}
+          title="Notifications"
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Bell size={14} />
+            <span>Notifications</span>
+          </div>
+          <NotificationBadge />
+        </button>
 
         {/* Logout Action */}
         <button

@@ -279,16 +279,24 @@ export const api = {
       request('/sales/checkout', { method: 'POST', body: data, role }),
   },
 
-  // Reports
-  reports: {
-    dailySales: (date: string) => request('/reports/daily-sales', { params: { date } }),
-    weeklySales: (start: string, end: string) => 
-      request('/reports/weekly-sales', { params: { start, end } }),
-    monthlySales: (month: string, year: string) =>
-      request('/reports/monthly-sales', { params: { month, year } }),
-    topProducts: (limit?: number) => request('/reports/top-products', { params: { limit } }),
-    lowStock: () => request('/reports/low-stock')
-  },
+// Reports
+   reports: {
+     dailySales: (date: string) => request('/reports/daily-sales', { params: { date } }),
+     weeklySales: (start: string, end: string) => 
+       request('/reports/weekly-sales', { params: { start, end } }),
+     monthlySales: (month: string, year: string) =>
+       request('/reports/monthly-sales', { params: { month, year } }),
+     topProducts: (limit?: number) => request('/reports/top-products', { params: { limit } }),
+     lowStock: () => request('/reports/low-stock'),
+     paymentMethods: (params?: { start?: string; end?: string }) => 
+       request('/reports/payment-methods', { params }),
+     categoriesPerformance: (params?: { start?: string; end?: string }) =>
+       request('/reports/categories-performance', { params }),
+     inventoryMovements: (params?: { start?: string; end?: string; product_id?: number; limit?: number }) =>
+       request('/reports/inventory-movements', { params }),
+     summary: (params?: { start?: string; end?: string }) =>
+       request('/reports/summary', { params })
+   },
 
   // Dashboard - professional unified endpoint
   dashboard: {

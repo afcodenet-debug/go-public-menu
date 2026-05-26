@@ -23,6 +23,45 @@
   "author": "",
   "license": "ISC",
   "type": "commonjs",
+  "build": {
+    "appId": "com.greatolive.pos",
+    "productName": "Great Olive",
+    "asar": true,
+    "npmRebuild": false,
+    "files": [
+      "dist/main/**/*",
+      "dist/server/**/*",
+      "dist/renderer/**/*",
+      "node_modules/**/*",
+      "package.json"
+    ],
+    "directories": {
+      "buildResources": "build"
+    },
+    "extraResources": [
+      {
+        "from": "data",
+        "to": "data"
+      }
+    ],
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ]
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "afterPack": "./bin/electron-after-pack.js"
+  },
   "devDependencies": {
     "@types/node": "^25.7.0",
     "@types/react": "^19.2.14",

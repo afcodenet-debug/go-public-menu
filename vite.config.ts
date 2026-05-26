@@ -4,11 +4,22 @@ import path from 'path'
 
 export default defineConfig({
   plugins: [react()],
+  appType: 'spa',
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src')
     }
   },
+
+  // IMPORTANT for Electron packaged build:
+  // main process loads: file://${__dirname}/../renderer/index.html
+  // so Vite must output to dist/renderer.
+  build: {
+    outDir: 'dist/renderer',
+    // Avoid noisy devtools “Source map error” in packaged runs
+    sourcemap: false
+  },
+
   server: {
     port: 5173,
     host: true,

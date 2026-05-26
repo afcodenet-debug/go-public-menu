@@ -1,7 +1,19 @@
-import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
 import { applyAll as runMigrations } from '../infra/migrations/runner';
+
+// better-sqlite3 ships native bindings.
+// In Electron/packaged runs (macOS/Windows) or unusual Node/Electron versions,
+// the native file might be missing and crash the whole server at import time.
+// We must therefore tolerate missing bindings and boot in "db disabled" mode.
+let Database: any = null;
+try {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  Database = require('better-sqlite3');
+} catch (e: any) {
+  console.warn('[Database] better-sqlite3 native bindings unavailable at require time:', e?.message || e);
+  Database = null;
+}
 
 // ══════════════════════════════════════════════════════════════════════════════
 // Database connector — Great Olive POS/ERP
@@ -49,27 +61,38 @@ const useSupabaseProducts = process.env.USE_SUPABASE_PRODUCTS === 'true' || proc
 
 let dbInstance: any = null;
 
-if (renderCloudMode || ((useSupabaseTables || useSupabaseProducts) && process.env.NODE_ENV === 'production')) {
-  console.warn('══════════════════════════════════════════════════════════════════');
-  console.warn('[Database] Cloud mode detected — exporting null DB stub.');
-  console.warn('RENDER_CLOUD_MODE=', renderCloudMode);
-  console.warn('All data operations must go through Supabase repositories.');
-  console.warn('══════════════════════════════════════════════════════════════════');
+try {
+  if (renderCloudMode || ((useSupabaseTables || useSupabaseProducts) && process.env.NODE_ENV === 'production')) {
+    console.warn('══════════════════════════════════════════════════════════════════');
+    console.warn('[Database] Cloud mode detected — exporting null DB stub.');
+    console.warn('RENDER_CLOUD_MODE=', renderCloudMode);
+    console.warn('All data operations must go through Supabase repositories.');
+    console.warn('══════════════════════════════════════════════════════════════════');
 
+    dbInstance = null;
+  } else {
+    if (!Database) {
+      console.warn('[Database] better-sqlite3 constructor unavailable — skipping local SQLite connection.');
+      dbInstance = null;
+    } else {
+      console.log('[Database] Connecting to:', dbPath);
+
+      dbInstance = new Database(dbPath, {
+        verbose: undefined,
+        timeout: 5000,
+      });
+
+      dbInstance.pragma('journal_mode = WAL');
+      dbInstance.pragma('synchronous = NORMAL');
+      dbInstance.pragma('busy_timeout = 5000');
+      dbInstance.pragma('cache_size = -64000');
+      dbInstance.pragma('foreign_keys = ON');
+    }
+  }
+} catch (e: any) {
+  console.error('[Database] CRITICAL: Failed to instantiate or configure SQLite (bindings or disk issue):', e?.message || e);
+  console.warn('[Database] Continuing in degraded mode with db=null. Supabase-only features may still work if enabled.');
   dbInstance = null;
-} else {
-  console.log('[Database] Connecting to:', dbPath);
-
-  dbInstance = new Database(dbPath, {
-    verbose: undefined,
-    timeout: 5000,
-  });
-
-  dbInstance.pragma('journal_mode = WAL');
-  dbInstance.pragma('synchronous = NORMAL');
-  dbInstance.pragma('busy_timeout = 5000');
-  dbInstance.pragma('cache_size = -64000');
-  dbInstance.pragma('foreign_keys = ON');
 }
 
 export const db = dbInstance;
@@ -144,6 +167,7 @@ export function initializeDatabase(): void {
     seedQrTokensForTables();
 
     ensureEmailSettingsDefaults();
+    ensureNotificationTables(); // Phase 3 - Notifications & Reports tables
 
     // Add email column to users (nullable + unique)
     try {
@@ -542,6 +566,77 @@ function createAnalyticsIndexes() {
     CREATE INDEX IF NOT EXISTS idx_sale_items_product ON sale_items(product_id);
     CREATE INDEX IF NOT EXISTS idx_sale_items_sale ON sale_items(sale_id);
   `);
+}
+
+// ── Phase 3: Notifications Tables (SQLite + Supabase compatible) ───────────────
+function ensureNotificationTables(): void {
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS notifications (
+        id                  TEXT PRIMARY KEY,
+        type                TEXT NOT NULL,
+        title               TEXT NOT NULL,
+        message             TEXT NOT NULL,
+        priority            TEXT NOT NULL DEFAULT 'medium',
+        notification_type   TEXT,
+        metadata            TEXT,
+        link                TEXT,
+        user_id             INTEGER,
+        role                TEXT,
+        read_at             DATETIME,
+        created_at          DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at          DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_notifications_created ON notifications(created_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id);
+      CREATE INDEX IF NOT EXISTS idx_notifications_role ON notifications(role);
+      CREATE INDEX IF NOT EXISTS idx_notifications_unread ON notifications(read_at) WHERE read_at IS NULL;
+
+      CREATE TABLE IF NOT EXISTS notification_preferences (
+        id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id             INTEGER,
+        role                TEXT NOT NULL,
+        email_enabled       BOOLEAN DEFAULT 1,
+        inapp_enabled       BOOLEAN DEFAULT 1,
+        qr_orders           BOOLEAN DEFAULT 1,
+        stock_alerts        BOOLEAN DEFAULT 1,
+        daily_reports       BOOLEAN DEFAULT 1,
+        inventory_summary   BOOLEAN DEFAULT 1,
+        payment_failed      BOOLEAN DEFAULT 1,
+        order_assigned      BOOLEAN DEFAULT 1,
+        system_errors       BOOLEAN DEFAULT 1,
+        created_at          DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at          DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(role, user_id)
+      );
+
+      CREATE TABLE IF NOT EXISTS scheduled_reports_log (
+        id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+        report_type         TEXT NOT NULL,
+        run_at              DATETIME NOT NULL,
+        recipients_count    INTEGER DEFAULT 0,
+        success             BOOLEAN DEFAULT 0,
+        error_message       TEXT,
+        metadata            TEXT,
+        created_at          DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_scheduled_reports_run ON scheduled_reports_log(run_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_scheduled_reports_type ON scheduled_reports_log(report_type);
+    `);
+
+    // Default preferences for roles (idempotent)
+    const roles = ['admin', 'manager', 'cashier', 'waiter'];
+    const insertPref = db.prepare(`
+      INSERT OR IGNORE INTO notification_preferences (role) VALUES (?)
+    `);
+    roles.forEach(r => insertPref.run(r));
+
+    console.log('[Database] Notification tables ensured (Phase 3)');
+  } catch (e: any) {
+    console.warn('[Database] Failed to ensure notification tables:', e.message);
+  }
 }
 
 // ───────────────────────────────────────────────────────────────────────────────

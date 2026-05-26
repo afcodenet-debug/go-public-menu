@@ -108,10 +108,32 @@ setTimeout(() => {
       );
       await Promise.race([loadPromise, timeoutPromise]);
 
-      const finishLoadPromise = new Promise(resolve => printWindow.webContents.once('did-finish-load', resolve));
+      const finishLoadPromise = new Promise((resolve, reject) => {
+        const wc = printWindow.webContents;
+
+        const onDidFinish = () => {
+          cleanup();
+          resolve();
+        };
+
+        const onDidFail = (_event, errorCode, errorDescription) => {
+          cleanup();
+          reject(new Error(`Did fail load: ${errorCode} ${errorDescription || ''}`.trim()));
+        };
+
+        const cleanup = () => {
+          wc.removeListener('did-finish-load', onDidFinish);
+          wc.removeListener('did-fail-load', onDidFail);
+        };
+
+        wc.once('did-finish-load', onDidFinish);
+        wc.once('did-fail-load', onDidFail);
+      });
+
       const finishTimeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Finish load timeout')), 5000)
+        setTimeout(() => reject(new Error('Finish load timeout')), 15000)
       );
+
       await Promise.race([finishLoadPromise, finishTimeoutPromise]);
 
       await new Promise(resolve => setTimeout(resolve, 500));
@@ -160,11 +182,33 @@ setTimeout(() => {
       // Show window briefly to ensure print dialog appears
       printWindow.show();
 
-      // Wait for did-finish-load with timeout
-      const finishLoadPromise = new Promise(resolve => printWindow.webContents.once('did-finish-load', resolve));
+      // Wait for did-finish-load with timeout (more robust)
+      const finishLoadPromise = new Promise((resolve, reject) => {
+        const wc = printWindow.webContents;
+
+        const onDidFinish = () => {
+          cleanup();
+          resolve();
+        };
+
+        const onDidFail = (_event, errorCode, errorDescription) => {
+          cleanup();
+          reject(new Error(`Did fail load: ${errorCode} ${errorDescription || ''}`.trim()));
+        };
+
+        const cleanup = () => {
+          wc.removeListener('did-finish-load', onDidFinish);
+          wc.removeListener('did-fail-load', onDidFail);
+        };
+
+        wc.once('did-finish-load', onDidFinish);
+        wc.once('did-fail-load', onDidFail);
+      });
+
       const finishTimeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Finish load timeout')), 5000)
+        setTimeout(() => reject(new Error('Finish load timeout')), 15000)
       );
+
       await Promise.race([finishLoadPromise, finishTimeoutPromise]);
 
       // Additional stabilization time
@@ -203,14 +247,59 @@ setTimeout(() => {
 function runApp() {
   const path = require('path');
   const { spawn } = require('child_process');
+  const fs = require('fs');
 
   let mainWindow = null;
   let serverProcess = null;
 
   // Check if we're in development or packaged app
-  const isDev = process.env.NODE_ENV === 'development';
+  const isDev = process.env.NODE_ENV === 'development' || !process.env.ELECTRON_RENDERER_URL;
 
-  // IPC handlers already defined above
+  function getRendererStartUrl() {
+    if (isDev) return 'http://localhost:5173';
+
+    // From dist/main/main.js => __dirname is dist/main
+    // Renderer outDir is dist/renderer now
+    const rendererIndexPath = path.join(__dirname, '../renderer/index.html');
+
+    if (!fs.existsSync(rendererIndexPath)) {
+      console.error('[Electron] Missing renderer index.html at:', rendererIndexPath);
+    }
+
+    return `file://${rendererIndexPath}`;
+  }
+
+  function startBackendServerIfNeeded() {
+    if (isDev) return;
+
+    try {
+      // From dist/main/main.js => dist/server/server/server.js
+      const serverEntry = path.join(__dirname, '../server/server/server.js');
+
+      if (!fs.existsSync(serverEntry)) {
+        console.error('[Electron] Missing backend server entry:', serverEntry);
+        return;
+      }
+
+      serverProcess = spawn(process.execPath, [serverEntry], {
+        stdio: ['ignore', 'pipe', 'pipe'],
+        env: {
+          ...process.env,
+          NODE_ENV: 'production'
+        }
+      });
+
+      serverProcess.stdout.on('data', (d) => console.log('[Backend]', d.toString().trim()));
+      serverProcess.stderr.on('data', (d) => console.error('[Backend]', d.toString().trim()));
+
+      serverProcess.on('exit', (code) => {
+        console.log('[Backend] exited with code', code);
+        serverProcess = null;
+      });
+    } catch (e) {
+      console.error('[Electron] Failed to start backend server:', e);
+    }
+  }
 
   function createWindow() {
     mainWindow = new BrowserWindow({
@@ -224,22 +313,46 @@ function runApp() {
       }
     });
 
-    // Use 5173 which is the default Vite port
-    const startUrl = isDev
-      ? 'http://localhost:5173'
-      : `file://${path.join(__dirname, '../renderer/index.html')}`;
-
+    const startUrl = getRendererStartUrl();
     mainWindow.loadURL(startUrl);
 
     mainWindow.once('ready-to-show', () => {
       mainWindow.show();
-      if (isDev) mainWindow.webContents.openDevTools();
+
+      // Avoid opening DevTools automatically in packaged mode.
+      // Only open when explicitly enabled.
+      if (isDev && process.env.ELECTRON_OPEN_DEVTOOLS === 'false') {
+        mainWindow.webContents.openDevTools();
+      }
     });
 
     mainWindow.on('closed', () => {
       mainWindow = null;
+    });
+  }
+
+  // Boot Electron app
+  app.on('ready', () => {
+    startBackendServerIfNeeded();
+    createWindow();
+  });
+
+  app.on('window-all-closed', () => {
+    // Keep consistent with common electron apps: quit on all platforms except macOS.
+    if (process.platform !== 'darwin') {
+      if (serverProcess && !serverProcess.killed) serverProcess.kill();
+      app.quit();
+    }
+  });
+
+  app.on('activate', () => {
+    if (mainWindow === null) createWindow();
   });
 }
+
+// IPC handlers defined in setTimeout above
+
+function generateReceiptHTML(receipt) {
   return `
     <!DOCTYPE html>
     <html>
@@ -349,5 +462,3 @@ function runApp() {
     </html>
   `;
 }
-
-// IPC handlers defined in setTimeout above

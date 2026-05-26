@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useOrderStore } from '../stores/useOrderStore';
 import { useTableStore } from '../stores/useTableStore';
@@ -150,6 +150,10 @@ const OrdersPage = () => {
     }
   }, []);
 
+  // Adaptive polling: 5s when there are pending QR orders, 10s otherwise
+  const { pendingQrCount } = useOrderStore();
+  const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
   useEffect(() => {
     if (user) {
       setUserContext(user.id, user.role);
@@ -158,9 +162,16 @@ const OrdersPage = () => {
         fetchTables();
       }
     }
-    const interval = setInterval(fetchAllOrders, 10000);
-    return () => clearInterval(interval);
-  }, [fetchAllOrders, setUserContext, user, fetchTables]);
+
+    const pollMs = pendingQrCount > 0 ? 5000 : 10000;
+
+    if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+    pollIntervalRef.current = setInterval(fetchAllOrders, pollMs);
+
+    return () => {
+      if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+    };
+  }, [fetchAllOrders, setUserContext, user, fetchTables, pendingQrCount]);
 
   useEffect(() => {
     setFilters({ search: searchTerm });

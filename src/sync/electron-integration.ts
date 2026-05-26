@@ -4,7 +4,7 @@
 
 import { app } from 'electron';
 import path from 'path';
-import Database from 'better-sqlite3';
+import type Database from 'better-sqlite3';
 import { initializeProductionSync, notifyNetworkStatus } from './production-sync-setup';
 
 let initialized = false;

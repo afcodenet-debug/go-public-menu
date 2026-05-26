@@ -25,6 +25,10 @@ import UsersPage from './pages/users/UsersPage';
 import InventoryAnalyticsPage from './features/products/components/InventoryAnalytics';
 import CategoriesPage from './pages/CategoriesPage';
 import PublicMenuPage from './pages/PublicMenuPage';
+import GlobalQrOrderNotifier from './components/GlobalQrOrderNotifier';
+import { GlobalNotificationToast } from './components/GlobalNotificationToast';
+import { NotificationCenter } from './components/NotificationCenter';
+import { useNotificationStore } from './stores/useNotificationStore';
 
 const ProtectedRoute = ({ children, roles }: { children: React.ReactNode, roles?: string[] }) => {
   const { isAuthenticated, user } = useAuthStore();
@@ -70,6 +74,12 @@ function App() {
                 <ProtectedRoute>
                   <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', background: '#09090f' }}>
                     <Sidebar />
+                    <GlobalQrOrderNotifier />
+                    <GlobalNotificationToast />
+                    <NotificationCenter 
+                      isOpen={useNotificationStore.getState().isCenterOpen} 
+                      onClose={() => useNotificationStore.getState().closeCenter()} 
+                    />
                     {/* SettingsSelector sits in the fixed sidebar column — footer area */}
                     <div style={{
                       position: 'fixed', left: 0, bottom: 0,

@@ -5,7 +5,7 @@
 import { app } from 'electron';
 import { initializeProductSync, getProductSyncService } from './index';
 import { SyncOrchestrator } from './sync-orchestrator';
-import Database from 'better-sqlite3';
+import type Database from 'better-sqlite3';
 import path from 'path';
 
 let orchestrator: SyncOrchestrator | null = null;
