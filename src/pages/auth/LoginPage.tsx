@@ -11,9 +11,14 @@ const LoginPage = () => {
   const [shaking,  setShaking]    = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
-  const { login, isServerHealthy, checkServer } = useAuthStore();
+  const { login, isServerHealthy, checkServer, isAuthenticated } = useAuthStore();
   const navigate = useNavigate();
   const { t } = useI18n();
+
+  // Redirect to dashboard if already authenticated
+  useEffect(() => {
+    if (isAuthenticated) navigate('/dashboard', { replace: true });
+  }, [isAuthenticated, navigate]);
 
   useEffect(() => {
     checkServer();
@@ -48,7 +53,7 @@ const LoginPage = () => {
     setError('');
     const success = await login(pin, identity || undefined);
     if (success) {
-      navigate('/');
+      navigate('/dashboard');
     } else {
       setShaking(true);
       setError('Accès refusé — vérifiez vos identifiants');

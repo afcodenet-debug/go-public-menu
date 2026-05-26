@@ -95,6 +95,7 @@ function App() {
                     <main style={{ flex: 1, overflowY: 'auto', position: 'relative' }} className="custom-scroll">
                       <Routes>
                         <Route path="/" element={<Dashboard />} />
+                        <Route path="/dashboard" element={<Dashboard />} />
                         <Route path="/tables" element={<TablesPage />} />
                         <Route path="/staff" element={
                           <ProtectedRoute roles={['admin', 'manager']}>
